@@ -1,10 +1,10 @@
 # Assignment Responder [![Picture](https://raw.github.com/janelia-flyem/janelia-flyem.github.com/master/images/HHMI_Janelia_Color_Alternate_180x40.png)](http://www.janelia.org)
 
-[![Build Status](https://travis-ci.org/janelia-flyem/assignment-responder.svg?branch=master)](https://travis-ci.org/janelia-flyem/assignment-responder)
-[![GitHub last commit](https://img.shields.io/github/last-commit/janelia-flyem/assignment-responder.svg)](https://github.com/janelia-flyem/assignment-responder)
-[![GitHub commit merge status](https://img.shields.io/github/commit-status/badges/shields/master/5d4ab86b1b5ddfb3c4a70a70bd19932c52603b8c.svg)](https://github.com/janelia-flyem/assignment-responder)
+[![Build Status](https://travis-ci.org/janelia-flyem/assignment-manager.svg?branch=master)](https://travis-ci.org/janelia-flyem/assignment-manager)
+[![GitHub last commit](https://img.shields.io/github/last-commit/janelia-flyem/assignment-manager.svg)](https://github.com/janelia-flyem/assignment-manager)
+[![GitHub commit merge status](https://img.shields.io/github/commit-status/badges/shields/master/5d4ab86b1b5ddfb3c4a70a70bd19932c52603b8c.svg)](https://github.com/janelia-flyem/assignment-manager)
 [![Python 3.7](https://img.shields.io/badge/python-3.7-blue.svg)](https://www.python.org/downloads/release/python-360/)
-[![Requirements Status](https://requires.io/github/janelia-flyem/assignment-responder/requirements.svg?branch=master)](https://requires.io/github/janelia-flyem/assignment-responder/requirements/?branch=master)
+[![Requirements Status](https://requires.io/github/janelia-flyem/assignment-manager/requirements.svg?branch=master)](https://requires.io/github/janelia-flyem/assignment-manager/requirements/?branch=master)
 
 ## Summary
 This repository contains the assignment manager system. 
