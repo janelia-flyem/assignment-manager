@@ -40,11 +40,13 @@ READ = {
                        + "subject=%s AND relationship='associated_with'",
     'PROJECT': "SELECT * FROM project_vw WHERE name=%s",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
+    'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name FROM task WHERE project_id=%s AND "
                         + "assignment_id IS NULL ORDER BY id",
 }
 WRITE = {
     'ASSIGN_TASK': "UPDATE task SET assignment_id=%s,user=%s WHERE assignment_id IS NULL AND id=%s",
+    'DELETE_UNASSIGNED': "DELETE FROM task WHERE project_id=%s AND assignment_id IS NULL",
     'INSERT_ASSIGNMENT': "INSERT INTO assignment (name,project_id,user) VALUES(%s,"
                          + "%s,%s)",
     'INSERT_PROJECT': "INSERT INTO project (name,protocol_id,roi,status) VALUES(%s,"
@@ -483,13 +485,34 @@ def check_missing_parms(ipd, required):
         raise InvalidUsage('Missing arguments: ' + missing)
 
 
-def generate_tasks(result, key_type):
+def generate_tasks(result, key_type, new_project):
     ''' Generate and persist a list of tasks for a project
         Keyword arguments:
           result: result dictionary
           key_type: type of key
+          new_project: indicates if this is a new or existing project
     '''
+    ignored = inserted = 0
+    if not new_project:
+        # Delete unassigned tasks
+        try:
+            g.c.execute(WRITE['DELETE_UNASSIGNED'], (result['rest']['inserted_id']))
+            result['rest']['row_count'] += g.c.rowcount
+            print("Deleted %d unassigned tasks die project %s" \
+                  % (g.c.rowcount, result['rest']['inserted_id']))
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
     for task in result['tasks']:
+        if not new_project:
+            try:
+                bind = (result['rest']['inserted_id'], key_type, str(task[key_type]))
+                g.c.execute(READ['TASK_EXISTS'], bind)
+                this_task = g.c.fetchone()
+            except Exception as err:
+                raise InvalidUsage(sql_error(err), 500)
+            if this_task:
+                ignored += 1
+                continue
         # Insert task
         try:
             name = "%d.%s" % (result['rest']['inserted_id'], str(task[key_type]))
@@ -498,6 +521,7 @@ def generate_tasks(result, key_type):
             g.c.execute(WRITE['INSERT_TASK'], bind)
             task_id = g.c.lastrowid
             result['rest']['row_count'] += g.c.rowcount
+            inserted += 1
             publish_cdc(result, {"table": "task", "operation": "insert"})
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
@@ -506,7 +530,10 @@ def generate_tasks(result, key_type):
             if prop in task:
                 update_property(task_id, result, 'task', prop, task[prop])
                 result['rest']['row_count'] += g.c.rowcount
-
+        if ignored:
+            result['rest']['tasks_skipped'] = ignored
+        if inserted:
+            result['rest']['tasks_inserted'] = inserted
 
 def generate_project(ipd, projectins, result):
     ''' Generate and persist a project (and its tasks).
@@ -520,24 +547,28 @@ def generate_project(ipd, projectins, result):
         project = g.c.fetchone()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
+    new_project = True
     if project:
-        raise InvalidUsage("Project %s already exists" % ipd['project_name'], 400)
-    try:
-        bind = (ipd['project_name'], ipd['protocol'], ipd['roi'], ipd['status'])
-        g.c.execute(WRITE['INSERT_PROJECT'], bind)
-        result['rest']['row_count'] = g.c.rowcount
-        result['rest']['inserted_id'] = g.c.lastrowid
-        result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_PROJECT'], bind)
-        publish_cdc(result, {"table": "project", "operation": "insert"})
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
+        result['rest']['inserted_id'] = project['id']
+        new_project = False
+        print("Project %s alreasy exists" % (project['id']))
+    else:
+        try:
+            bind = (ipd['project_name'], ipd['protocol'], ipd['roi'], ipd['status'])
+            g.c.execute(WRITE['INSERT_PROJECT'], bind)
+            result['rest']['row_count'] = g.c.rowcount
+            result['rest']['inserted_id'] = g.c.lastrowid
+            result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_PROJECT'], bind)
+            publish_cdc(result, {"table": "project", "operation": "insert"})
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
     for parm in projectins.optional_properties:
         if parm in ipd:
             update_property(result['rest']['inserted_id'], result, 'project', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     update_property(result['rest']['inserted_id'], result, 'project', 'filter', json.dumps(ipd))
     result['rest']['row_count'] += g.c.rowcount
-    generate_tasks(result, projectins.unit)
+    generate_tasks(result, projectins.unit, new_project)
     g.db.commit()
 
 
@@ -1138,7 +1169,8 @@ def get_cv_by_id(sid):
     parameters:
       - in: path
         name: sid
-        type: string
+        schema:
+          type: string
         required: true
         description: CV ID
     responses:
@@ -1191,27 +1223,32 @@ def add_cv(): # pragma: no cover
     parameters:
       - in: query
         name: name
-        type: string
+        schema:
+          type: string
         required: true
         description: CV name
       - in: query
         name: definition
-        type: string
+        schema:
+          type: string
         required: true
         description: CV description
       - in: query
         name: display_name
-        type: string
+        schema:
+          type: string
         required: false
         description: CV display name (defaults to CV name)
       - in: query
         name: version
-        type: string
+        schema:
+          type: string
         required: false
         description: CV version (defaults to 1)
       - in: query
         name: is_current
-        type: string
+        schema:
+          type: string
         required: false
         description: is CV current? (defaults to 1)
     responses:
@@ -1302,7 +1339,8 @@ def get_cv_term_by_id(sid):
     parameters:
       - in: path
         name: sid
-        type: string
+        schema:
+          type: string
         required: true
         description: CV term ID
     responses:
@@ -1355,32 +1393,38 @@ def add_cv_term(): # pragma: no cover
     parameters:
       - in: query
         name: cv
-        type: string
+        schema:
+          type: string
         required: true
         description: CV name
       - in: query
         name: name
-        type: string
+        schema:
+          type: string
         required: true
         description: CV term name
       - in: query
         name: definition
-        type: string
+        schema:
+          type: string
         required: true
         description: CV term description
       - in: query
         name: display_name
-        type: string
+        schema:
+          type: string
         required: false
         description: CV term display name (defaults to CV term name)
       - in: query
         name: is_current
-        type: string
+        schema:
+          type: string
         required: false
         description: is CV term current? (defaults to 1)
       - in: query
         name: data_type
-        type: string
+        schema:
+          type: string
         required: false
         description: data type (defaults to text)
     responses:
@@ -1457,6 +1501,13 @@ def reload_protocol(protocol):
     ---
     tags:
       - Protocol
+    parameters:
+      - in: path
+        name: protocol
+        schema:
+          type: string
+        required: true
+        description: protocol
     responses:
       200:
           description: Protocol reloaded
@@ -1519,8 +1570,8 @@ def get_project_ids():
     return generate_response(result)
 
 
-@app.route('/projects/<string:sid>', methods=['GET'])
-def get_projects_by_id(sid):
+@app.route('/projects/<string:project_id>', methods=['GET'])
+def get_projects_by_id(project_id):
     '''
     Get project information for a given ID
     Given an ID, return a row from the project_vw table. Specific columns
@@ -1531,8 +1582,9 @@ def get_projects_by_id(sid):
       - Project
     parameters:
       - in: path
-        name: sid
-        type: string
+        name: project_id
+        schema:
+          type: string
         required: true
         description: project ID
     responses:
@@ -1542,7 +1594,7 @@ def get_projects_by_id(sid):
           description: Project ID not found
     '''
     result = initialize_result()
-    execute_sql(result, 'SELECT * FROM project_vw', 'data', sid)
+    execute_sql(result, 'SELECT * FROM project_vw', 'data', project_id)
     return generate_response(result)
 
 
@@ -1617,8 +1669,8 @@ def get_projectprop_ids():
     return generate_response(result)
 
 
-@app.route('/projectprops/<string:sid>', methods=['GET'])
-def get_projectprops_by_id(sid):
+@app.route('/projectprops/<string:pid>', methods=['GET'])
+def get_projectprops_by_id(pid):
     '''
     Get project property information for a given ID
     Given an ID, return a row from the project_property_vw table. Specific
@@ -1629,8 +1681,9 @@ def get_projectprops_by_id(sid):
       - Project
     parameters:
       - in: path
-        name: sid
-        type: string
+        name: pid
+        schema:
+          type: string
         required: true
         description: project property ID
     responses:
@@ -1640,7 +1693,7 @@ def get_projectprops_by_id(sid):
           description: Project property ID not found
     '''
     result = initialize_result()
-    execute_sql(result, 'SELECT * FROM project_property_vw', 'data', sid)
+    execute_sql(result, 'SELECT * FROM project_property_vw', 'data', pid)
     return generate_response(result)
 
 
@@ -1672,27 +1725,59 @@ def get_projectprop_info():
 
 
 @app.route('/project/<string:protocol>', methods=['OPTIONS', 'POST'])
-def new_project(protocol):
+def process_project(protocol):
     '''
     Generate a new project
     Given a protocol and a JSON payload containing specifics, generate
     a new project and return its ID and a list of tasks. A "project_name"
-    parameter is required. Optional parameters for filtering are "pre",
-    "post", and "size". Parameters may be passed in as form-data or JSON.
+    parameter is required. There are several optional parameters - check
+    the "protocols" endpoint to see which protocols support which parameters.
+    Parameters may be passed in as form-data or JSON.
     ---
     tags:
       - Project
     parameters:
       - in: path
         name: protocol
-        type: string
+        schema:
+          type: string
         required: true
         description: protocol
+      - in: query
+        name: project_name
+        schema:
+          type: string
+        required: true
+        description: project name
+      - in: query
+        name: note
+        schema:
+          type: string
+        required: false
+        description: project note
+      - in: query
+        name: post
+        schema:
+          type: string
+        required: false
+        description: neuron "post" filter
+      - in: query
+        name: pre
+        schema:
+          type: string
+        required: false
+        description: neuron "pre" filter
+      - in: query
+        name: size
+        schema:
+          type: string
+        required: false
+        description: neuron "size" filter
     responses:
       200:
-          description: New project ID and list of tasks
+        description: New project ID and list of tasks
       404:
-          description: No neurons found
+        description: No neurons found
     '''
     result = initialize_result()
     # Get payload
@@ -1768,8 +1853,8 @@ def get_assignment_ids():
     return generate_response(result)
 
 
-@app.route('/assignments/<string:sid>', methods=['GET'])
-def get_assignments_by_id(sid):
+@app.route('/assignments/<string:assignment_id>', methods=['GET'])
+def get_assignments_by_id(assignment_id):
     '''
     Get assignment information for a given ID
     Given an ID, return a row from the assignment_vw table. Specific columns
@@ -1780,8 +1865,9 @@ def get_assignments_by_id(sid):
       - Assignment
     parameters:
       - in: path
-        name: sid
-        type: string
+        name: assignment_id
+        schema:
+          type: string
         required: true
         description: assignment ID
     responses:
@@ -1791,7 +1877,7 @@ def get_assignments_by_id(sid):
           description: Assignment ID not found
     '''
     result = initialize_result()
-    execute_sql(result, 'SELECT * FROM assignment_vw', 'data', sid)
+    execute_sql(result, 'SELECT * FROM assignment_vw', 'data', assignment_id)
     return generate_response(result)
 
 
@@ -1946,8 +2032,8 @@ def get_assignmentprop_ids():
     return generate_response(result)
 
 
-@app.route('/assignmentprops/<string:sid>', methods=['GET'])
-def get_assignmentprops_by_id(sid):
+@app.route('/assignmentprops/<string:aid>', methods=['GET'])
+def get_assignmentprops_by_id(aid):
     '''
     Get assignment property information for a given ID
     Given an ID, return a row from the assignment_property_vw table. Specific
@@ -1958,8 +2044,9 @@ def get_assignmentprops_by_id(sid):
       - Assignment
     parameters:
       - in: path
-        name: sid
-        type: string
+        name: aid
+        schema:
+          type: string
         required: true
         description: assignment property ID
     responses:
@@ -1969,7 +2056,7 @@ def get_assignmentprops_by_id(sid):
           description: Assignment property ID not found
     '''
     result = initialize_result()
-    execute_sql(result, 'SELECT * FROM assignment_property_vw', 'data', sid)
+    execute_sql(result, 'SELECT * FROM assignment_property_vw', 'data', aid)
     return generate_response(result)
 
 
@@ -2014,7 +2101,8 @@ def new_assignment(project_name):
     parameters:
       - in: path
         name: project_name
-        type: string
+        schema:
+          type: string
         required: true
         description: project name
     responses:
@@ -2043,12 +2131,14 @@ def start_assignment_by_id(assignment_id): # pragma: no cover
     parameters:
       - in: path
         name: assignment_id
-        type: string
+        schema:
+          type: string
         required: true
         description: assignment ID
       - in: query
         name: note
-        type: string
+        schema:
+          type: string
         required: false
         description: note
     responses:
@@ -2073,13 +2163,15 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
       - Assignment
     parameters:
       - in: query
-        name: id
-        type: string
+        name: assignment_id
+        schema:
+          type: string
         required: true
         description: assignment ID
       - in: query
         name: note
-        type: string
+        schema:
+          type: string
         required: false
         description: note
     responses:
@@ -2140,12 +2232,14 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
     parameters:
       - in: query
         name: assignment_id
-        type: string
+        schema:
+          type: string
         required: true
         description: assignment ID
       - in: query
         name: note
-        type: string
+        schema:
+          type: string
         required: false
         description: note
     responses:
@@ -2239,8 +2333,8 @@ def get_task_ids():
     return generate_response(result)
 
 
-@app.route('/tasks/<string:sid>', methods=['GET'])
-def get_tasks_by_id(sid):
+@app.route('/tasks/<string:task_id>', methods=['GET'])
+def get_tasks_by_id(task_id):
     '''
     Get task information for a given ID
     Given an ID, return a row from the task_vw table. Specific columns
@@ -2251,8 +2345,9 @@ def get_tasks_by_id(sid):
       - Task
     parameters:
       - in: path
-        name: sid
-        type: string
+        name: task_id
+        schema:
+          type: string
         required: true
         description: task ID
     responses:
@@ -2262,7 +2357,7 @@ def get_tasks_by_id(sid):
           description: Task ID not found
     '''
     result = initialize_result()
-    execute_sql(result, 'SELECT * FROM task_vw', 'data', sid)
+    execute_sql(result, 'SELECT * FROM task_vw', 'data', task_id)
     return generate_response(result)
 
 
@@ -2301,12 +2396,14 @@ def start_task_by_id(task_id): # pragma: no cover
     parameters:
       - in: path
         name: task_id
-        type: string
+        schema:
+          type: string
         required: true
         description: task ID
       - in: query
         name: note
-        type: string
+        schema:
+          type: string
         required: false
         description: note
     responses:
@@ -2332,12 +2429,14 @@ def complete_task_by_id(task_id): # pragma: no cover
     parameters:
       - in: path
         name: task_id
-        type: string
+        schema:
+          type: string
         required: true
         description: task ID
       - in: query
         name: note
-        type: string
+        schema:
+          type: string
         required: false
         description: note
     responses:
@@ -2399,8 +2498,8 @@ def get_taskprop_ids():
     return generate_response(result)
 
 
-@app.route('/taskprops/<string:sid>', methods=['GET'])
-def get_taskprops_by_id(sid):
+@app.route('/taskprops/<string:tid>', methods=['GET'])
+def get_taskprops_by_id(tid):
     '''
     Get task property information for a given ID
     Given an ID, return a row from the task_property_vw table. Specific
@@ -2411,8 +2510,9 @@ def get_taskprops_by_id(sid):
       - Task
     parameters:
       - in: path
-        name: sid
-        type: string
+        name: tid
+        schema:
+          type: string
         required: true
         description: task property ID
     responses:
@@ -2422,7 +2522,7 @@ def get_taskprops_by_id(sid):
           description: Task property ID not found
     '''
     result = initialize_result()
-    execute_sql(result, 'SELECT * FROM task_property_vw', 'data', sid)
+    execute_sql(result, 'SELECT * FROM task_property_vw', 'data', tid)
     return generate_response(result)
 
 
