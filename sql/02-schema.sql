@@ -201,7 +201,7 @@ CREATE TABLE `task_property` (
   UNIQUE KEY `task_property_type_uk_ind` (`type_id`,`task_id`) USING BTREE,
   KEY `task_property_line_id_fk_ind` (`task_id`) USING BTREE,
   KEY `task_property_type_id_fk_ind` (`type_id`) USING BTREE,
-  CONSTRAINT `task_property_task_id_fk` FOREIGN KEY (`task_id`) REFERENCES `task` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `task_property_task_id_fk` FOREIGN KEY (`task_id`) REFERENCES `task` (`id`) ON DELETE CASCADE ON UPDATE NO ACTION,
   CONSTRAINT `task_property_type_id_fk` FOREIGN KEY (`type_id`) REFERENCES `cv_term` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB AUTO_INCREMENT=64766 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
