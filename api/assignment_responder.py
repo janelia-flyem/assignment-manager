@@ -3,6 +3,7 @@
 '''
 
 from datetime import datetime, timedelta
+from importlib import import_module, reload
 import inspect
 import json
 import os
@@ -23,6 +24,8 @@ import requests
 
 import assignment_utilities
 from assignment_utilities import call_responder, working_duration
+
+# pylint: disable=W0611
 from orphan_link import Orphan_link
 
 # SQL statements
@@ -37,14 +40,15 @@ READ = {
                        + "subject=%s AND relationship='associated_with'",
     'PROJECT': "SELECT * FROM project_vw WHERE name=%s",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
-    'UNASSIGNED_TASKS': "SELECT id,name FROM task WHERE project_id=%s AND assignment_id IS NULL ORDER BY id",
+    'UNASSIGNED_TASKS': "SELECT id,name FROM task WHERE project_id=%s AND "
+                        + "assignment_id IS NULL ORDER BY id",
 }
 WRITE = {
     'ASSIGN_TASK': "UPDATE task SET assignment_id=%s,user=%s WHERE assignment_id IS NULL AND id=%s",
     'INSERT_ASSIGNMENT': "INSERT INTO assignment (name,project_id,user) VALUES(%s,"
                          + "%s,%s)",
     'INSERT_PROJECT': "INSERT INTO project (name,protocol_id,roi,status) VALUES(%s,"
-                         + "getCvTermId('protocol',%s,NULL),%s,%s)",
+                      + "getCvTermId('protocol',%s,NULL),%s,%s)",
     'INSERT_CV' : "INSERT INTO cv (name,definition,display_name,version,"
                   + "is_current) VALUES (%s,%s,%s,%s,%s)",
     'INSERT_CVTERM' : "INSERT INTO cv_term (cv_id,name,definition,display_name"
@@ -74,7 +78,6 @@ __version__ = '0.2.0'
 app = Flask(__name__)
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
-CVTERMS = dict()
 SERVER = dict()
 CORS(app)
 CONN = pymysql.connect(host=app.config['MYSQL_DATABASE_HOST'],
@@ -124,7 +127,7 @@ def before_request():
         If needed, initilize global variables.
     '''
     # pylint: disable=W0603
-    global START_TIME, CVTERMS, ESEARCH, SERVER, PRODUCER
+    global START_TIME, ESEARCH, SERVER, PRODUCER
     g.db = CONN
     g.c = CURSOR
     if not SERVER:
@@ -134,21 +137,12 @@ def before_request():
         SERVER = data['config']
         try:
             ESEARCH = elasticsearch.Elasticsearch(SERVER['elk-elastic']['address'])
-        except Exception as exc: # pragma: no cover
+        except Exception as err: # pragma: no cover
             template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
             message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
             print(message)
             sys.exit(-1)
         PRODUCER = KafkaProducer(bootstrap_servers=SERVER['Kafka']['broker_list'])
-        try:
-            g.c.execute('SELECT cv,cv_term,id FROM cv_term_vw ORDER BY 1,2')
-            rows = g.c.fetchall()
-            for row in rows:
-                if row['cv'] not in CVTERMS:
-                    CVTERMS[row['cv']] = dict()
-                CVTERMS[row['cv']][row['cv_term']] = row['id']
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
     START_TIME = time()
     app.config['COUNTER'] += 1
     endpoint = request.endpoint if request.endpoint else '(Unknown)'
@@ -186,31 +180,6 @@ def call_profile(token):
         print("Could not get response from %s" % (url))
         print(req)
         sys.exit(-1)
-
-
-def call_responder_DEFUNCT(server, endpoint, payload=''):
-    ''' Call a responder
-        Keyword arguments:
-          server: server
-          endpoint: REST endpoint
-          payload: payload for POST requests
-    '''
-    url = assignment_utilities.CONFIG[server]['url'] + endpoint
-    print("call_responder calling " + url)
-    try:
-        if payload:
-            headers = {"Content-Type": "application/json",
-                       "Authorization": "Bearer " + app.config['BEARER']}
-            req = requests.post(url, headers=headers, json=payload)
-        else:
-            req = requests.get(url)
-    except requests.exceptions.RequestException as err: # pragma no cover
-        print(err)
-        sys.exit(-1)
-    if req.status_code == 200:
-        return req.json()
-    print("Could not get response from %s: %s" % (url, req.text))
-    raise InvalidUsage(req.text, req.status_code)
 
 
 def sql_error(err):
@@ -443,7 +412,7 @@ def generate_response(result):
     return jsonify(**result)
 
 
-def update_property(id, result, table, name, value):
+def update_property(pid, result, table, name, value):
     ''' Insert/update a property
         Keyword arguments:
           id: parent ID
@@ -456,7 +425,7 @@ def update_property(id, result, table, name, value):
            + "(!s,getCvTermId(!s,!s,NULL),!s) ON DUPLICATE KEY UPDATE value=!s"
     stmt = stmt % (table, table)
     stmt = stmt.replace('!s', '%s')
-    bind = (id, table, name, value, value)
+    bind = (pid, table, name, value, value)
     try:
         g.c.execute(stmt, bind)
         publish_cdc(result, {"table": table + "_property", "operation": "update"})
@@ -573,9 +542,13 @@ def generate_project(ipd, projectins, result):
     g.db.commit()
 
 
-def get_assignment_by_id(id):
+def get_assignment_by_id(aid):
+    ''' Get an assignment by ID
+        Keyword arguments:
+          aid: assignment ID
+    '''
     try:
-        g.c.execute(READ['ASSIGNMENT'], (id))
+        g.c.execute(READ['ASSIGNMENT'], (aid))
         assignment = g.c.fetchone()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
@@ -612,7 +585,8 @@ def generate_assignment(ipd, result):
     if not tasks:
         raise InvalidUsage("Project %s has no unassigned tasks" % ipd['project_name'], 404)
     elif len(tasks) < num_tasks:
-        raise InvalidUsage(("Project %s only has %s unassigned tasks, not %s" % (ipd['project_name'], len(tasks), ipd['tasks'])), 404)
+        raise InvalidUsage(("Project %s only has %s unassigned tasks, not %s" \
+                            % (ipd['project_name'], len(tasks), ipd['tasks'])), 404)
     try:
         bind = (ipd['assignment_name'], project['id'], ipd['user'])
         g.c.execute(WRITE['INSERT_ASSIGNMENT'], bind)
@@ -640,6 +614,7 @@ def generate_assignment(ipd, result):
             raise InvalidUsage(sql_error(err), 500)
     if updated != num_tasks:
         raise InvalidUsage("Could not assign tasks for project %s" % ipd['project_name'], 500)
+    result['rest']['assigned_tasks'] = updated
     if 'start' in ipd:
         ipd['id'] = result['rest']['inserted_id']
         start_assignment(ipd, result)
@@ -659,7 +634,8 @@ def start_assignment(ipd, result):
         raise InvalidUsage("Assignment %s was already started" % ipd['id'], 400)
     # Update the assignment
     try:
-        stmt = "UPDATE assignment SET start_date=NOW(),disposition='In progress' WHERE id=%s AND start_date IS NULL"
+        stmt = "UPDATE assignment SET start_date=NOW()," \
+               + "disposition='In progress' WHERE id=%s AND start_date IS NULL"
         bind = (ipd['id'],)
         start_time = int(time())
         g.c.execute(stmt, bind)
@@ -677,7 +653,8 @@ def start_assignment(ipd, result):
             result['rest']['row_count'] += g.c.rowcount
     # Update the project
     try:
-        g.c.execute("UPDATE project SET disposition='In progress' WHERE name=%s", (assignment['project'],))
+        g.c.execute("UPDATE project SET disposition='In progress' WHERE "
+                    + "name=%s", (assignment['project'],))
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     g.db.commit()
@@ -716,9 +693,13 @@ def build_tasks(ipd, response, project, result):
     result['tasks'] = sorted(nlist, key=lambda i: i['timestamp'])
 
 
-def get_task_by_id(id):
+def get_task_by_id(tid):
+    ''' Get a task by ID
+        Keyword arguments:
+          tid: task ID
+    '''
     try:
-        g.c.execute(READ['TASK'], (id))
+        g.c.execute(READ['TASK'], (tid))
         task = g.c.fetchone()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
@@ -738,7 +719,8 @@ def start_task(ipd, result):
         raise InvalidUsage("Task %s was already started" % ipd['id'], 400)
     # Update the task
     try:
-        stmt = "UPDATE task SET start_date=NOW(),disposition='In progress' WHERE id=%s AND start_date IS NULL"
+        stmt = "UPDATE task SET start_date=NOW(),disposition='In progress' " \
+               + "WHERE id=%s AND start_date IS NULL"
         bind = (ipd['id'],)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
@@ -773,7 +755,8 @@ def complete_task(ipd, result):
         raise InvalidUsage("Task %s was already completed" % ipd['id'], 400)
     # Update the task
     try:
-        stmt = "UPDATE task SET completion_date=NOW(),disposition='Complete' WHERE id=%s AND completion_date IS NULL"
+        stmt = "UPDATE task SET completion_date=NOW(),disposition='Complete'" \
+               + "WHERE id=%s AND completion_date IS NULL"
         bind = (ipd['id'],)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
@@ -863,8 +846,6 @@ def remove_id_from_index(this_id, index, result):
 # *****************************************************************************
 # * Endpoints                                                                 *
 # *****************************************************************************
-
-
 @app.errorhandler(InvalidUsage)
 def handle_invalid_usage(error):
     ''' Error handler
@@ -1407,9 +1388,66 @@ def add_cv_term(): # pragma: no cover
             result['rest']['inserted_id'] = g.c.lastrowid
             result['rest']['sql_statement'] = g.c._last_executed
             publish_cdc(result, {"table": "cv_term", "operation": "insert"})
-            publish_cdc(result, message)
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
+    return generate_response(result)
+
+
+# *****************************************************************************
+# * Protocol endpoints                                                        *
+# *****************************************************************************
+@app.route('/protocols', methods=['GET'])
+def get_protocol_info():
+    '''
+    Get protocol information
+    Return a list of protocols (rows from the cv_term_vw table).
+    ---
+    tags:
+      - Protocol
+    responses:
+      200:
+          description: List of protocols
+      404:
+          description: Protocols not found
+    '''
+    result = initialize_result()
+    execute_sql(result, "SELECT cv_term FROM cv_term_vw WHERE cv='protocol' ORDER BY 1", 'temp')
+    result['data'] = dict()
+    for prot in result['temp']:
+        result['data'][prot['cv_term']] = dict()
+        record = result['data'][prot['cv_term']]
+        record['module_loaded'] = bool(prot['cv_term'] in sys.modules)
+        if record['module_loaded']:
+            PROTOCOL = prot['cv_term'].capitalize()
+            constructor = globals()[PROTOCOL]
+            projectins = constructor()
+            for name, data in inspect.getmembers(projectins):
+                if name.startswith('__') or 'method' in str(data):
+                    continue
+                record[name] = str(data)
+    del result['temp']
+    return generate_response(result)
+
+
+@app.route('/protocol/<string:protocol>/reload', methods=['OPTIONS', 'POST'])
+def reload_protocol(protocol):
+    '''
+    Reload a protocol module
+    Reload a protocol's module.
+    ---
+    tags:
+      - Protocol
+    responses:
+      200:
+          description: Protocol reloaded
+      404:
+          description: Protocol not reloaded
+    '''
+    result = initialize_result()
+    if not protocol in sys.modules:
+        raise InvalidUsage("Protocol %s is not loaded" % protocol, 400)
+    modobj = import_module(protocol)
+    reload(modobj)
     return generate_response(result)
 
 
@@ -1811,7 +1849,8 @@ def get_assignment_remaining_info():
           description: Assignments not found
     '''
     result = initialize_result()
-    execute_sql(result, 'SELECT * FROM assignment_vw WHERE start_date IS NULL AND completion_date IS NULL', 'data')
+    execute_sql(result, 'SELECT * FROM assignment_vw WHERE start_date '
+                + 'IS NULL AND completion_date IS NULL', 'data')
     return generate_response(result)
 
 
@@ -2047,8 +2086,9 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
         tasks = g.c.fetchall()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    if len(tasks) > 0:
-        raise InvalidUsage("Found %s task(s) not yet complete for assignment %s" % (len(tasks), assignment_id), 400)
+    if tasks:
+        raise InvalidUsage("Found %s task(s) not yet complete for assignment %s" \
+                           % (len(tasks), assignment_id), 400)
     start_time = int(assignment['start_date'].timestamp())
     end_time = int(time())
     duration = end_time - start_time
@@ -2120,8 +2160,9 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
         tasks = g.c.fetchall()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    if len(tasks) > 0:
-        raise InvalidUsage("Found %s task(s) already started for assignment %s" % (len(tasks), assignment_id), 400)
+    if tasks:
+        raise InvalidUsage("Found %s task(s) already started for assignment %s" \
+                           % (len(tasks), assignment_id), 400)
     try:
         stmt = "UPDATE assignment SET start_date=NULL,completion_date=NULL " \
                + "WHERE id=%s"
@@ -2242,8 +2283,8 @@ def get_task_info():
     return generate_response(result)
 
 
-@app.route('/task/<string:id>/start', methods=['OPTIONS', 'POST'])
-def start_task_by_id(id): # pragma: no cover
+@app.route('/task/<string:task_id>/start', methods=['OPTIONS', 'POST'])
+def start_task_by_id(task_id): # pragma: no cover
     '''
     Start a task
     ---
@@ -2251,7 +2292,7 @@ def start_task_by_id(id): # pragma: no cover
       - Task
     parameters:
       - in: path
-        name: id
+        name: task_id
         type: string
         required: true
         description: task ID
@@ -2268,13 +2309,13 @@ def start_task_by_id(id): # pragma: no cover
     '''
     result = initialize_result()
     ipd = receive_payload(result)
-    ipd['id'] = id
+    ipd['id'] = task_id
     start_task(ipd, result)
     return generate_response(result)
 
 
-@app.route('/task/<string:id>/complete', methods=['OPTIONS', 'POST'])
-def complete_task_by_id(id): # pragma: no cover
+@app.route('/task/<string:task_id>/complete', methods=['OPTIONS', 'POST'])
+def complete_task_by_id(task_id): # pragma: no cover
     '''
     Complete a task
     ---
@@ -2282,7 +2323,7 @@ def complete_task_by_id(id): # pragma: no cover
       - Task
     parameters:
       - in: path
-        name: id
+        name: task_id
         type: string
         required: true
         description: task ID
@@ -2299,7 +2340,7 @@ def complete_task_by_id(id): # pragma: no cover
     '''
     result = initialize_result()
     ipd = receive_payload(result)
-    ipd['id'] = id
+    ipd['id'] = task_id
     complete_task(ipd, result)
     return generate_response(result)
 
