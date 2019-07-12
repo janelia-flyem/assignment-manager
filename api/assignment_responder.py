@@ -320,7 +320,7 @@ def execute_sql(result, sql, container, query=False):
     if rows:
         result[container] = rows
         result['rest']['row_count'] = len(rows)
-        result['rest']['sql_statement'] = g.c._last_executed
+        result['rest']['sql_statement'] = g.c.mogrify(sql, bind)
         return 1
     raise InvalidUsage("No rows returned for query %s" % (sql,), 404)
 
@@ -528,7 +528,7 @@ def generate_project(ipd, projectins, result):
         g.c.execute(WRITE['INSERT_PROJECT'], bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['inserted_id'] = g.c.lastrowid
-        result['rest']['sql_statement'] = g.c._last_executed
+        result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_PROJECT'], bind)
         publish_cdc(result, {"table": "project", "operation": "insert"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
@@ -555,6 +555,42 @@ def get_assignment_by_id(aid):
     return assignment
 
 
+def get_unassigned_project_tasks(ipd, project_id, num_tasks):
+    ''' Get a list of unassigned tasks for a project
+        Keyword arguments:
+          ipd: request payload
+          project_id: project ID
+          num_tasks: number of tasks to assign
+    '''
+    try:
+        g.c.execute(READ['UNASSIGNED_TASKS'], (project_id))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if not tasks:
+        raise InvalidUsage("Project %s has no unassigned tasks" % ipd['project_name'], 404)
+    elif len(tasks) < num_tasks:
+        raise InvalidUsage(("Project %s only has %s unassigned tasks, not %s" \
+                            % (ipd['project_name'], len(tasks), ipd['tasks'])), 404)
+    return tasks
+
+
+def get_incomplete_assignment_tasks(assignment_id):
+    ''' Get a list of completed tasks for an assignment
+        Keyword arguments:
+          assignment_id: assignment ID
+    '''
+    try:
+        stmt = "SELECT id FROM task WHERE assignment_id=%s AND completion_date IS NULL"
+        g.c.execute(stmt, (assignment_id))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if tasks:
+        raise InvalidUsage("Found %s task(s) not yet complete for assignment %s" \
+                           % (len(tasks), assignment_id), 400)
+
+
 def generate_assignment(ipd, result):
     ''' Generate and persist an assignment and update its tasks.
         Keyword arguments:
@@ -569,30 +605,19 @@ def generate_assignment(ipd, result):
         raise InvalidUsage(sql_error(err), 500)
     if not project:
         raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
-    PROTOCOL = project['protocol'].capitalize()
-    constructor = globals()[PROTOCOL]
+    constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
-    # Find unassigned tasks
     if 'tasks' in ipd:
         num_tasks = int(ipd['tasks'])
     else:
         num_tasks = projectins.num_tasks
-    try:
-        g.c.execute(READ['UNASSIGNED_TASKS'], (project['id']))
-        tasks = g.c.fetchall()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    if not tasks:
-        raise InvalidUsage("Project %s has no unassigned tasks" % ipd['project_name'], 404)
-    elif len(tasks) < num_tasks:
-        raise InvalidUsage(("Project %s only has %s unassigned tasks, not %s" \
-                            % (ipd['project_name'], len(tasks), ipd['tasks'])), 404)
+    tasks = get_unassigned_project_tasks(ipd, project['id'], num_tasks)
     try:
         bind = (ipd['assignment_name'], project['id'], ipd['user'])
         g.c.execute(WRITE['INSERT_ASSIGNMENT'], bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['inserted_id'] = g.c.lastrowid
-        result['rest']['sql_statement'] = g.c._last_executed
+        result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_ASSIGNMENT'], bind)
         publish_cdc(result, {"table": "assignment", "operation": "insert"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
@@ -640,12 +665,10 @@ def start_assignment(ipd, result):
         start_time = int(time())
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c._last_executed
+        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    protocol = assignment['protocol']
-    PROTOCOL = protocol.capitalize()
-    constructor = globals()[PROTOCOL]
+    constructor = globals()[assignment['protocol'].capitalize()]
     projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
@@ -724,14 +747,12 @@ def start_task(ipd, result):
         bind = (ipd['id'],)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c._last_executed
+        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
         publish_cdc(result, {"table": "task", "operation": "update"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     assignment = get_assignment_by_id(task['assignment_id'])
-    protocol = assignment['protocol']
-    PROTOCOL = protocol.capitalize()
-    constructor = globals()[PROTOCOL]
+    constructor = globals()[assignment['protocol'].capitalize()]
     projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
@@ -760,14 +781,12 @@ def complete_task(ipd, result):
         bind = (ipd['id'],)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c._last_executed
+        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
         publish_cdc(result, {"table": "task", "operation": "update"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     assignment = get_assignment_by_id(task['assignment_id'])
-    protocol = assignment['protocol']
-    PROTOCOL = protocol.capitalize()
-    constructor = globals()[PROTOCOL]
+    constructor = globals()[assignment['protocol'].capitalize()]
     projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
@@ -803,7 +822,8 @@ def publish_cdc(result, message):
           result: result dictionary
           message: message to publish
     '''
-    return
+    if not app.config['ENABLE_CDC']:
+        return
     message['uri'] = request.url
     message['client'] = 'assignment_responder'
     message['user'] = result['rest']['user']
@@ -812,7 +832,7 @@ def publish_cdc(result, message):
     message['time'] = int(time())
     message['id'] = g.c.lastrowid
     message['rows'] = g.c.rowcount
-    message['sql'] = g.c._last_executed
+    message['sql'] = g.c._last_executed # pylint: disable=W0212
     future = PRODUCER.send(app.config['KAFKA_TOPIC'], json.dumps(message).encode('utf-8'))
     try:
         future.get(timeout=10)
@@ -992,10 +1012,11 @@ def get_processlist_host_info(): # pragma: no cover
     hostname = platform.node() + '%'
     try:
         sql = "SELECT * FROM information_schema.processlist WHERE host LIKE %s"
-        g.c.execute(sql, (hostname,))
+        bind = (hostname)
+        g.c.execute(sql, bind)
         rows = g.c.fetchall()
         result['rest']['row_count'] = len(rows)
-        result['rest']['sql_statement'] = g.c._last_executed
+        result['rest']['sql_statement'] = g.c.mogrify(sql, bind)
         for row in rows:
             row['HOST'] = 'None' if row['HOST'] is None else row['HOST'].decode("utf-8")
         result['data'] = rows
@@ -1216,7 +1237,7 @@ def add_cv(): # pragma: no cover
             g.c.execute(WRITE['INSERT_CV'], bind)
             result['rest']['row_count'] = g.c.rowcount
             result['rest']['inserted_id'] = g.c.lastrowid
-            result['rest']['sql_statement'] = g.c._last_executed
+            result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_CV'], bind)
             g.db.commit()
             publish_cdc(result, {"table": "cv", "operation": "insert"})
         except Exception as err:
@@ -1386,7 +1407,7 @@ def add_cv_term(): # pragma: no cover
             g.c.execute(WRITE['INSERT_CVTERM'], bind)
             result['rest']['row_count'] = g.c.rowcount
             result['rest']['inserted_id'] = g.c.lastrowid
-            result['rest']['sql_statement'] = g.c._last_executed
+            result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_CVTERM'], bind)
             publish_cdc(result, {"table": "cv_term", "operation": "insert"})
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
@@ -1679,8 +1700,7 @@ def new_project(protocol):
     ipd = receive_payload(result)
     check_missing_parms(ipd, ['project_name'])
     ipd['protocol'] = protocol
-    PROTOCOL = protocol.capitalize()
-    constructor = globals()[PROTOCOL]
+    constructor = globals()[protocol.capitalize()]
     projectins = constructor()
     try:
         response = projectins.cypher(result, ipd)
@@ -2079,16 +2099,7 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
         raise InvalidUsage("Assignment %s was not started" % ipd['id'], 400)
     elif assignment['completion_date']:
         raise InvalidUsage("Assignment %s was already completed" % ipd['id'], 400)
-    # Look for incomplete tasks
-    try:
-        stmt = "SELECT id FROM task WHERE assignment_id=%s AND completion_date IS NOT NULL"
-        g.c.execute(stmt, (assignment_id))
-        tasks = g.c.fetchall()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    if tasks:
-        raise InvalidUsage("Found %s task(s) not yet complete for assignment %s" \
-                           % (len(tasks), assignment_id), 400)
+    #get_incomplete_assignment_tasks(assignment_id)
     start_time = int(assignment['start_date'].timestamp())
     end_time = int(time())
     duration = end_time - start_time
@@ -2099,15 +2110,13 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
         bind = (end_time, duration, working, ipd['id'],)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c._last_executed
+        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
         publish_cdc(result, {"table": "assignment", "operation": "update"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     if result['rest']['row_count'] == 0:
         raise InvalidUsage("Assignment %s was not updated" % (ipd['id']), 400)
-    protocol = assignment['protocol']
-    PROTOCOL = protocol.capitalize()
-    constructor = globals()[PROTOCOL]
+    constructor = globals()[assignment['protocol'].capitalize()]
     projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
@@ -2169,7 +2178,7 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
         bind = (assignment_id,)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c._last_executed
+        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
         publish_cdc(result, {"table": "assignment", "operation": "update"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
