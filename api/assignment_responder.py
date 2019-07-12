@@ -568,7 +568,7 @@ def get_unassigned_project_tasks(ipd, project_id, num_tasks):
         raise InvalidUsage(sql_error(err), 500)
     if not tasks:
         raise InvalidUsage("Project %s has no unassigned tasks" % ipd['project_name'], 404)
-    elif len(tasks) < num_tasks:
+    if len(tasks) < num_tasks:
         raise InvalidUsage(("Project %s only has %s unassigned tasks, not %s" \
                             % (ipd['project_name'], len(tasks), ipd['tasks'])), 404)
     return tasks
@@ -737,7 +737,7 @@ def start_task(ipd, result):
     task = get_task_by_id(ipd['id'])
     if not task:
         raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
-    elif task['start_date']:
+    if task['start_date']:
         raise InvalidUsage("Task %s was already started" % ipd['id'], 400)
     # Update the task
     try:
@@ -769,9 +769,9 @@ def complete_task(ipd, result):
     task = get_task_by_id(ipd['id'])
     if not task:
         raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
-    elif not task['start_date']:
+    if not task['start_date']:
         raise InvalidUsage("Task %s was not started" % ipd['id'], 400)
-    elif task['completion_date']:
+    if task['completion_date']:
         raise InvalidUsage("Task %s was already completed" % ipd['id'], 400)
     # Update the task
     try:
@@ -2094,11 +2094,11 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
     assignment = get_assignment_by_id(ipd['id'])
     if not assignment:
         raise InvalidUsage("Assignment %s does not exist" % ipd['id'], 404)
-    elif not assignment['start_date']:
+    if not assignment['start_date']:
         raise InvalidUsage("Assignment %s was not started" % ipd['id'], 400)
-    elif assignment['completion_date']:
+    if assignment['completion_date']:
         raise InvalidUsage("Assignment %s was already completed" % ipd['id'], 400)
-    #get_incomplete_assignment_tasks(assignment_id)
+    get_incomplete_assignment_tasks(assignment_id)
     start_time = int(assignment['start_date'].timestamp())
     end_time = int(time())
     duration = end_time - start_time
@@ -2159,7 +2159,7 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
     assignment = get_assignment_by_id(assignment_id)
     if not assignment:
         raise InvalidUsage("Assignment %s does not exist" % assignment_id, 404)
-    elif not assignment['start_date']:
+    if not assignment['start_date']:
         raise InvalidUsage("Assignment %s was not started" % assignment_id, 400)
     # Look for started tasks
     try:
