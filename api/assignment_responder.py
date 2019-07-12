@@ -176,10 +176,9 @@ def call_profile(token):
         return req.json()
     if req.status_code == 401:
         raise InvalidUsage("Please provide a valid Auth Token", 401)
-    else:
-        print("Could not get response from %s" % (url))
-        print(req)
-        sys.exit(-1)
+    print("Could not get response from %s" % (url))
+    print(req)
+    sys.exit(-1)
 
 
 def sql_error(err):
