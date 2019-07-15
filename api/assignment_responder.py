@@ -535,13 +535,57 @@ def generate_tasks(result, key_type, new_project):
         if inserted:
             result['rest']['tasks_inserted'] = inserted
 
-def generate_project(ipd, projectins, result):
+
+
+def valid_cv_term(cv, cv_term):
+    ''' Determine if a CV term is valid for a given CV
+        Keyword arguments:
+          cv: CV
+          rcv_term CV term
+    '''
+    if cv not in app.config['VALID_TERMS']:
+        g.c.execute("SELECT cv_term FROM cv_term_vw WHERE cv=%s", (cv))
+        cv_terms = g.c.fetchall()
+        app.config['VALID_TERMS'][cv] = []
+        for term in cv_terms:
+            app.config['VALID_TERMS'][cv].append(term['cv_term'])
+    print(app.config['VALID_TERMS'])
+    return 1 if cv_term in app.config['VALID_TERMS'][cv] else 0
+
+
+def generate_project(protocol, result):
     ''' Generate and persist a project (and its tasks).
         Keyword arguments:
-          ipd: request payload
-          projectins: project instance
+          protocol: project protocol
           result: result dictionary
     '''
+    # Get payload
+    ipd = receive_payload(result)
+    check_missing_parms(ipd, ['project_name'])
+    ipd['protocol'] = protocol
+    # Is this a valid protocol?
+    if not valid_cv_term('protocol', protocol):
+        raise InvalidUsage("%s in not a valid protocol" % protocol, 400)
+    # Instattiate project
+    constructor = globals()[protocol.capitalize()]
+    projectins = constructor()
+    # Query NeuPrint
+    try:
+        response = projectins.cypher(result, ipd)
+    except AssertionError as err:
+        raise InvalidUsage(err.args[0])
+    except Exception as err:
+        template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+        message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
+        raise InvalidUsage(message, 500)
+    if not response['data']:
+        raise InvalidUsage('No neurons found', 404)
+    # Create tasks in memory
+    build_tasks(ipd, response, projectins, result)
+    result['rest']['row_count'] = len(result['tasks'])
+    if not result['tasks']:
+        return
+    # Create or rebuild project
     try:
         g.c.execute(READ['PROJECT'], (ipd['project_name']))
         project = g.c.fetchone()
@@ -551,8 +595,9 @@ def generate_project(ipd, projectins, result):
     if project:
         result['rest']['inserted_id'] = project['id']
         new_project = False
-        print("Project %s alreasy exists" % (project['id']))
+        print("Project %s already exists" % (project['id']))
     else:
+        # Insert project record
         try:
             bind = (ipd['project_name'], ipd['protocol'], ipd['roi'], ipd['status'])
             g.c.execute(WRITE['INSERT_PROJECT'], bind)
@@ -562,12 +607,15 @@ def generate_project(ipd, projectins, result):
             publish_cdc(result, {"table": "project", "operation": "insert"})
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
+    # Add project properties from input parameters
     for parm in projectins.optional_properties:
         if parm in ipd:
             update_property(result['rest']['inserted_id'], result, 'project', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
+    # Add the filter as a project property
     update_property(result['rest']['inserted_id'], result, 'project', 'filter', json.dumps(ipd))
     result['rest']['row_count'] += g.c.rowcount
+    # Insert tasks into the database
     generate_tasks(result, projectins.unit, new_project)
     g.db.commit()
 
@@ -770,6 +818,11 @@ def start_task(ipd, result):
         raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
     if task['start_date']:
         raise InvalidUsage("Task %s was already started" % ipd['id'], 400)
+    # Check the asignment
+    assignment = get_assignment_by_id(task['assignment_id'])
+    if not assignment['start_date']:
+        raise InvalidUsage("Assignment %s (associated with task %s) has not been started" \
+                           % (task['assignment_id'], ipd['id']), 400)
     # Update the task
     try:
         stmt = "UPDATE task SET start_date=NOW(),disposition='In progress' " \
@@ -804,11 +857,21 @@ def complete_task(ipd, result):
         raise InvalidUsage("Task %s was not started" % ipd['id'], 400)
     if task['completion_date']:
         raise InvalidUsage("Task %s was already completed" % ipd['id'], 400)
+    start_time = int(task['start_date'].timestamp())
+    end_time = int(time())
+    duration = end_time - start_time
+    working = working_duration(start_time, end_time)
     # Update the task
+    # Get the disposition
+    disposition = 'Complete'
+    if 'disposition' in ipd:
+        disposition = ipd['disposition']
+        if not valid_cv_term('disposition', disposition):
+            raise InvalidUsage("%s in not a valid disposition" % disposition, 400)
     try:
-        stmt = "UPDATE task SET completion_date=NOW(),disposition='Complete'" \
-               + "WHERE id=%s AND completion_date IS NULL"
-        bind = (ipd['id'],)
+        stmt = "UPDATE task SET completion_date=FROM_UNIXTIME(%s),disposition=%s," \
+               + "duration=%s,working_duration=%s WHERE id=%s AND completion_date IS NULL"
+        bind = (end_time, disposition, duration, working, ipd['id'],)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
@@ -1780,28 +1843,8 @@ def process_project(protocol):
         description: No neurons found
     '''
     result = initialize_result()
-    # Get payload
-    ipd = receive_payload(result)
-    check_missing_parms(ipd, ['project_name'])
-    ipd['protocol'] = protocol
-    constructor = globals()[protocol.capitalize()]
-    projectins = constructor()
-    try:
-        response = projectins.cypher(result, ipd)
-    except AssertionError as err:
-        raise InvalidUsage(err.args[0])
-    except Exception as err:
-        template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
-        message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
-        raise InvalidUsage(message, 500)
-    if not response['data']:
-        raise InvalidUsage('No neurons found', 404)
-    build_tasks(ipd, response, projectins, result)
-    result['rest']['row_count'] = len(result['tasks'])
-    if not result['tasks']:
-        return generate_response(result)
-    # Insert project and tasks
-    generate_project(ipd, projectins, result)
+    # Create the project
+    generate_project(protocol, result)
     return generate_response(result)
 
 
