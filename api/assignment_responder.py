@@ -41,7 +41,7 @@ READ = {
     'PROJECT': "SELECT * FROM project_vw WHERE name=%s",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
-    'UNASSIGNED_TASKS': "SELECT id,name FROM task WHERE project_id=%s AND "
+    'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
                         + "assignment_id IS NULL ORDER BY id",
 }
 WRITE = {
@@ -58,6 +58,8 @@ WRITE = {
                       + "%s,%s,%s)",
     'INSERT_TASK': "INSERT INTO task (name,project_id,key_type_id,key_text,"
                    + "user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s)",
+    'TASK_AUDIT': "INSERT INTO task_audit (project_id,assignment_id,key_type_id,key_text,"
+                  + "disposition,user) VALUES (%s,%s,%s,%s,%s,%s)",
 }
 
 # pylint: disable=C0302,C0103,W0703
@@ -498,7 +500,7 @@ def generate_tasks(result, key_type, new_project):
         try:
             g.c.execute(WRITE['DELETE_UNASSIGNED'], (result['rest']['inserted_id']))
             result['rest']['row_count'] += g.c.rowcount
-            print("Deleted %d unassigned tasks die project %s" \
+            print("Deleted %d unassigned tasks for project %s" \
                   % (g.c.rowcount, result['rest']['inserted_id']))
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
@@ -536,7 +538,6 @@ def generate_tasks(result, key_type, new_project):
             result['rest']['tasks_inserted'] = inserted
 
 
-
 def valid_cv_term(cv, cv_term):
     ''' Determine if a CV term is valid for a given CV
         Keyword arguments:
@@ -549,7 +550,6 @@ def valid_cv_term(cv, cv_term):
         app.config['VALID_TERMS'][cv] = []
         for term in cv_terms:
             app.config['VALID_TERMS'][cv].append(term['cv_term'])
-    print(app.config['VALID_TERMS'])
     return 1 if cv_term in app.config['VALID_TERMS'][cv] else 0
 
 
@@ -711,6 +711,10 @@ def generate_assignment(ipd, result):
             result['rest']['row_count'] += g.c.rowcount
             updated += 1
             publish_cdc(result, {"table": "assignment", "operation": "update"})
+            bind = (project['id'], result['rest']['inserted_id'], task['key_type_id'],
+                    task['key_text'], 'Assigned', ipd['user'])
+            g.c.execute(WRITE['TASK_AUDIT'], bind)
+            result['rest']['row_count'] += g.c.rowcount
             if updated >= num_tasks:
                 break
         except Exception as err:
@@ -832,6 +836,9 @@ def start_task(ipd, result):
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
         publish_cdc(result, {"table": "task", "operation": "update"})
+        bind = (task['project_id'], assignment['id'], task['key_type_id'], task['key_text'],
+                'In progress', task['user'])
+        g.c.execute(WRITE['TASK_AUDIT'], bind)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     assignment = get_assignment_by_id(task['assignment_id'])
@@ -879,6 +886,9 @@ def complete_task(ipd, result):
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     assignment = get_assignment_by_id(task['assignment_id'])
+    bind = (task['project_id'], assignment['id'], task['key_type_id'], task['key_text'],
+            disposition, task['user'])
+    g.c.execute(WRITE['TASK_AUDIT'], bind)
     constructor = globals()[assignment['protocol'].capitalize()]
     projectins = constructor()
     for parm in projectins.optional_properties:

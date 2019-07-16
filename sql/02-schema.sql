@@ -180,8 +180,10 @@ CREATE TABLE `task` (
   `create_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `start_date` timestamp DEFAULT NULL,
   `completion_date` timestamp DEFAULT NULL,
+  `duration` int(10) unsigned DEFAULT NULL,
+  `working_duration` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `task_name_uk_ind` (`name`) USING BTREE,
+  UNIQUE KEY `task_type_key_uk_ind` (`key_type_id`,`key_text`) USING BTREE,
   CONSTRAINT `task_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `task_assignment_id_fk` FOREIGN KEY (`assignment_id`) REFERENCES `assignment` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `task_key_type_id_fk` FOREIGN KEY (`key_type_id`) REFERENCES `cv_term` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION
@@ -204,6 +206,26 @@ CREATE TABLE `task_property` (
   CONSTRAINT `task_property_task_id_fk` FOREIGN KEY (`task_id`) REFERENCES `task` (`id`) ON DELETE CASCADE ON UPDATE NO ACTION,
   CONSTRAINT `task_property_type_id_fk` FOREIGN KEY (`type_id`) REFERENCES `cv_term` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB AUTO_INCREMENT=64766 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+DROP TABLE IF EXISTS `task_audit`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `task_audit` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `project_id` int(10) unsigned NOT NULL,
+  `assignment_id` int(10) unsigned DEFAULT NULL,
+  `key_type_id` int(10) unsigned NOT NULL,
+  `key_text` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `disposition` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs,
+  `user` varchar(128) NOT NULL,
+  `create_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `task_audit_type_key_uk_ind` (`key_type_id`,`key_text`) USING BTREE,
+  CONSTRAINT `task_audit_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `task_audit_assignment_id_fk` FOREIGN KEY (`assignment_id`) REFERENCES `assignment` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `task_audit_key_type_id_fk` FOREIGN KEY (`key_type_id`) REFERENCES `cv_term` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION
+) ENGINE=InnoDB AUTO_INCREMENT=1001 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 SET FOREIGN_KEY_CHECKS=0;

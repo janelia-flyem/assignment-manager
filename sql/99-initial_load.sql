@@ -12,9 +12,10 @@ TRUNCATE TABLE cv;
 INSERT INTO cv (version,is_current,name,display_name,definition) VALUES (1,1,'schema','relationships defined in the schema','relationships defined in the schema');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('schema',''),1,'associated_with',NULL,NULL);
 
-INSERT INTO cv (version,is_current,name,display_name,definition) VALUES (1,1,'key','Key','Key');
-INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('key',''),1,'body_id','Body ID','Body ID');
-INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('key',''),1,'xyz','XYZ coords','XYZ coordinates');
+INSERT INTO cv (version,is_current,name,display_name,definition) VALUES (1,1,'disposition','Disposition','Disposition');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('disposition',''),1,'In progress','In progress','In progress (started)');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('disposition',''),1,'Complete','Complete','Complete');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('disposition',''),1,'Skipped','Skipped','Skipped');
 
 INSERT INTO cv (version,is_current,name,display_name,definition) VALUES (1,1,'protocol','Project type','Project type');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('protocol',''),1,'cleave','Cleave','Cleave');
@@ -28,6 +29,10 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('protocol',''),1,'synapse_review_roi','Synapse review (ROI)','Synapse review (ROI) - [precomputed]');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('protocol',''),1,'tip_detection','Tip detection','Tip detection - DVID');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('protocol',''),1,'to_do','To do','To do - DVID');
+
+INSERT INTO cv (version,is_current,name,display_name,definition) VALUES (1,1,'key','Key','Key');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('key',''),1,'body_id','Body ID','Body ID');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('key',''),1,'xyz','XYZ coords','XYZ coordinates');
 
 # INSERT INTO cv_term_relationship (is_current,type_id,subject_id,object_id) VALUES (1,getCvTermId('schema','associated_with',NULL),getCvTermId('protocol','orphan_link',NULL),getCvTermId('key','body_id',NULL));
 
