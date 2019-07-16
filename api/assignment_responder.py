@@ -714,7 +714,6 @@ def generate_assignment(ipd, result):
             bind = (project['id'], result['rest']['inserted_id'], task['key_type_id'],
                     task['key_text'], 'Assigned', ipd['user'])
             g.c.execute(WRITE['TASK_AUDIT'], bind)
-            result['rest']['row_count'] += g.c.rowcount
             if updated >= num_tasks:
                 break
         except Exception as err:
@@ -2160,9 +2159,9 @@ def new_assignment(project_name):
         description: project name
     responses:
       200:
-          description: New project ID and list of tasks
+          description: Assignment generated
       404:
-          description: No neurons found
+          description: Assignment not generated
     '''
     result = initialize_result()
     # Get payload
@@ -2171,6 +2170,57 @@ def new_assignment(project_name):
     ipd['assignment_name'] = ''
     check_missing_parms(ipd, ['user'])
     generate_assignment(ipd, result)
+    return generate_response(result)
+
+
+@app.route('/assignment/<string:assignment_id>', methods=['OPTIONS', 'DELETE'])
+def delete_assignment(assignment_id):
+    '''
+    Delete an assignment
+    Selete an assignment and revert its tasks back to unassigned.
+    ---
+    tags:
+      - Assignment
+    parameters:
+      - in: path
+        name: assignment_id
+        schema:
+          type: string
+        required: true
+        description: assignment ID
+    responses:
+      200:
+          description: Assignment deleted
+      404:
+          description: Assignment was not deleted
+    '''
+    result = initialize_result()
+    assignment = get_assignment_by_id(assignment_id)
+    if not assignment:
+        raise InvalidUsage("Assignment %s was not found" % assignment_id, 404)
+    try:
+        g.c.execute("SELECT * FROM task_vw WHERE assignment_id=%s", (assignment_id))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    for task in tasks:
+        if task['start_date']:
+             raise InvalidUsage("Assignment %s has one or more started tasks" % assignment_id, 400)
+    try:
+        stmt = "UPDATE task SET assignment_id=NULL WHERE assignment_id = %s"
+        bind = (assignment_id)
+        g.c.execute(stmt, bind)
+        result['rest']['row_count'] = g.c.rowcount
+        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
+        for task in tasks:
+            bind = (task['project_id'], assignment_id, task['key_type_id'], task['key_text'],
+                    'Unassigned', task['user'])
+            g.c.execute(WRITE['TASK_AUDIT'], bind)
+        g.c.execute("DELETE from assignment WHERE id=%s", (assignment_id))
+        result['rest']['row_count'] += g.c.rowcount
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    g.db.commit()
     return generate_response(result)
 
 
