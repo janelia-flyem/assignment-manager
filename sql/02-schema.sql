@@ -181,7 +181,7 @@ CREATE TABLE `task` (
   `duration` int(10) unsigned DEFAULT NULL,
   `working_duration` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `task_type_key_uk_ind` (`key_type_id`,`key_text`) USING BTREE,
+  KEY `task_type_key_uk_ind` (`key_type_id`,`key_text`) USING BTREE,
   CONSTRAINT `task_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `task_assignment_id_fk` FOREIGN KEY (`assignment_id`) REFERENCES `assignment` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `task_key_type_id_fk` FOREIGN KEY (`key_type_id`) REFERENCES `cv_term` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION

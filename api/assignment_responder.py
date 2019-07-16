@@ -27,6 +27,7 @@ from assignment_utilities import call_responder, working_duration
 
 # pylint: disable=W0611
 from orphan_link import Orphan_link
+from cleave import Cleave
 
 # SQL statements
 READ = {
@@ -553,23 +554,13 @@ def valid_cv_term(cv, cv_term):
     return 1 if cv_term in app.config['VALID_TERMS'][cv] else 0
 
 
-def generate_project(protocol, result):
-    ''' Generate and persist a project (and its tasks).
+def query_neuprint(projectins, result, ipd):
+    ''' Build and execute NeuPrint Cypher query
         Keyword arguments:
-          protocol: project protocol
+          projectins: project instance
           result: result dictionary
+          ipd: request payload
     '''
-    # Get payload
-    ipd = receive_payload(result)
-    check_missing_parms(ipd, ['project_name'])
-    ipd['protocol'] = protocol
-    # Is this a valid protocol?
-    if not valid_cv_term('protocol', protocol):
-        raise InvalidUsage("%s in not a valid protocol" % protocol, 400)
-    # Instattiate project
-    constructor = globals()[protocol.capitalize()]
-    projectins = constructor()
-    # Query NeuPrint
     try:
         response = projectins.cypher(result, ipd)
     except AssertionError as err:
@@ -580,6 +571,29 @@ def generate_project(protocol, result):
         raise InvalidUsage(message, 500)
     if not response['data']:
         raise InvalidUsage('No neurons found', 404)
+    return response
+
+
+def generate_project(protocol, result):
+    ''' Generate and persist a project (and its tasks).
+        Keyword arguments:
+          protocol: project protocol
+          result: result dictionary
+    '''
+    # Get payload
+    ipd = receive_payload(result)
+    check_missing_parms(ipd, ['project_name'])
+    if app.config['DEBUG']:
+        print("Generating %s project %s" % (protocol, ipd['project_name']))
+    ipd['protocol'] = protocol
+    # Is this a valid protocol?
+    if not valid_cv_term('protocol', protocol):
+        raise InvalidUsage("%s in not a valid protocol" % protocol, 400)
+    # Instattiate project
+    constructor = globals()[protocol.capitalize()]
+    projectins = constructor()
+    # Query NeuPrint
+    response = query_neuprint(projectins, result, ipd)
     # Create tasks in memory
     build_tasks(ipd, response, projectins, result)
     result['rest']['row_count'] = len(result['tasks'])
@@ -776,6 +790,8 @@ def build_tasks(ipd, response, project, result):
           result: result dictionary
     '''
     nlist = []
+    if app.config['DEBUG']:
+        print("Creating %s task(s)" % (len(response['data'])))
     for row in response['data']:
         ndat = row[0]
         if not filter_greater_than(project, ndat, ipd):
@@ -786,12 +802,13 @@ def build_tasks(ipd, response, project, result):
         timestamp = ''
         if 'timestamp' in ndat:
             timestamp = ndat['timeStamp']
-        this_dict = {"cluster_name": ndat['clusterName'],
-                     "post": ndat['post'],
+        this_dict = {"post": ndat['post'],
                      "pre": ndat['pre'],
                      "size": ndat['size'],
                      "status": status,
                      "timestamp": timestamp}
+        if 'clusterName' in ndat:
+            this_dict['cluster_name'] = ndat['clusterName']
         this_dict[project.unit] = ndat[project.cypher_unit]
         nlist.append(this_dict)
     result['tasks'] = sorted(nlist, key=lambda i: i['timestamp'])
