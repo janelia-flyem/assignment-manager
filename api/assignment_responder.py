@@ -525,6 +525,9 @@ def generate_tasks(result, key_type, new_project):
             task_id = g.c.lastrowid
             result['rest']['row_count'] += g.c.rowcount
             inserted += 1
+            bind = (result['rest']['inserted_id'], task_id, get_key_type_id(key_type),
+                    str(task[key_type]), 'Inserted', result['rest']['user'])
+            g.c.execute(WRITE['TASK_AUDIT'], bind)
             publish_cdc(result, {"table": "task", "operation": "insert"})
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
@@ -552,6 +555,18 @@ def valid_cv_term(cv, cv_term):
         for term in cv_terms:
             app.config['VALID_TERMS'][cv].append(term['cv_term'])
     return 1 if cv_term in app.config['VALID_TERMS'][cv] else 0
+
+
+def get_key_type_id(key_type):
+    if key_type not in app.config['KEY_TYPE_IDS']:
+        try:
+            g.c.execute("SELECT id,cv_term FROM cv_term_vw WHERE cv='key'")
+            cv_terms = g.c.fetchall()
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+        for term in cv_terms:
+            app.config['KEY_TYPE_IDS'][term['cv_term']] = term['id']
+    return app.config['KEY_TYPE_IDS'][key_type]
 
 
 def query_neuprint(projectins, result, ipd):
@@ -632,6 +647,21 @@ def generate_project(protocol, result):
     # Insert tasks into the database
     generate_tasks(result, projectins.unit, new_project)
     g.db.commit()
+
+
+def get_project_by_name_or_id(proj):
+    ''' Get a project by ID
+        Keyword arguments:
+          proj: project name or ID
+    '''
+    stmt = "SELECT * FROM project_vw WHERE id=%s" if proj.isdigit() \
+           else "SELECT * FROM project_vw WHERE name=%s"
+    try:
+        g.c.execute(stmt, (proj))
+        project = g.c.fetchone()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    return project
 
 
 def get_assignment_by_id(aid):
@@ -825,6 +855,18 @@ def get_task_by_id(tid):
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     return task
+
+
+def get_task_by_key(pid, key_type, key):
+    ''' Get a task by project ID/key type/key
+        Keyword arguments:
+          pid: project ID
+          key_type: key type
+          key: key
+    '''
+    bind = (pid, key_type, key)
+    g.c.execute("SELECT * from task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s", bind)
+    return g.c.fetchone()
 
 
 def start_task(ipd, result):
@@ -2408,6 +2450,66 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
 # *****************************************************************************
 # * Task endpoints                                                            *
 # *****************************************************************************
+@app.route('/tasks/<string:protocol>/<string:project_name>', methods=['OPTIONS', 'POST'])
+def new_tasks_for_project(protocol, project_name):
+    '''
+    Generate one or more new tasks for an existing project
+    Given a JSON payload containing specifics, generate new tasks for an
+    existing project and return the task IDs.
+    Parameters may be passed in as JSON.
+    ---
+    tags:
+      - Assignment
+    parameters:
+      - in: path
+        name: protocol
+        schema:
+          type: string
+        required: true
+        description: protocol
+      - in: path
+        name: project_name
+        schema:
+          type: string
+        required: true
+        description: project name (or ID)
+    responses:
+      200:
+          description: Assignment generated
+      404:
+          description: Assignment not generated
+    '''
+    result = initialize_result()
+    # Get payload
+    ipd = receive_payload(result)
+    project = get_project_by_name_or_id(project_name)
+    if not project:
+        raise InvalidUsage("Project %s was not found" % project_name)
+    if not isinstance(ipd, (list)):
+        raise InvalidUsage("Payload must be a JSON list of body IDs")
+    constructor = globals()[protocol.capitalize()]
+    projectins = constructor()
+    for key in ipd:
+        task = get_task_by_key(project['id'], projectins.unit, key)
+        if task:
+            raise InvalidUsage("Task exists for %s %s in project %s" % (projectins.unit, key, project['id']))
+    result['tasks'] = dict()
+    for key in ipd:
+        bind = ('', project['id'], projectins.unit,
+                str(key), result['rest']['user'],)
+        try:
+            g.c.execute(WRITE['INSERT_TASK'], bind)
+            result['rest']['row_count'] += g.c.rowcount
+            result['tasks'][key] = g.c.lastrowid
+            bind = (project['id'], g.c.lastrowid, get_key_type_id(projectins.unit),
+                    key, 'Inserted', result['rest']['user'])
+            g.c.execute(WRITE['TASK_AUDIT'], bind)
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+    g.db.commit()
+    return generate_response(result)
+
+
 @app.route('/tasks/columns', methods=['GET'])
 def get_task_columns():
     '''
