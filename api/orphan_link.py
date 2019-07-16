@@ -7,7 +7,7 @@ class Orphan_link:
         self.unit = 'body_id'
         self.cypher_unit = 'bodyId'
         self.allowable_filters = ['post', 'pre', 'size']
-        self.optional_properties = ['note']
+        self.optional_properties = ['roi', 'status', 'note']
 
     def cypher(self, result, ipd):
         '''

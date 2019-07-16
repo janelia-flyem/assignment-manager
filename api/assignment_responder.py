@@ -49,8 +49,8 @@ WRITE = {
     'DELETE_UNASSIGNED': "DELETE FROM task WHERE project_id=%s AND assignment_id IS NULL",
     'INSERT_ASSIGNMENT': "INSERT INTO assignment (name,project_id,user) VALUES(%s,"
                          + "%s,%s)",
-    'INSERT_PROJECT': "INSERT INTO project (name,protocol_id,roi,status) VALUES(%s,"
-                      + "getCvTermId('protocol',%s,NULL),%s,%s)",
+    'INSERT_PROJECT': "INSERT INTO project (name,protocol_id) VALUES(%s,"
+                      + "getCvTermId('protocol',%s,NULL))",
     'INSERT_CV' : "INSERT INTO cv (name,definition,display_name,version,"
                   + "is_current) VALUES (%s,%s,%s,%s,%s)",
     'INSERT_CVTERM' : "INSERT INTO cv_term (cv_id,name,definition,display_name"
@@ -599,7 +599,7 @@ def generate_project(protocol, result):
     else:
         # Insert project record
         try:
-            bind = (ipd['project_name'], ipd['protocol'], ipd['roi'], ipd['status'])
+            bind = (ipd['project_name'], ipd['protocol'])
             g.c.execute(WRITE['INSERT_PROJECT'], bind)
             result['rest']['row_count'] = g.c.rowcount
             result['rest']['inserted_id'] = g.c.lastrowid
@@ -2205,7 +2205,7 @@ def delete_assignment(assignment_id):
         raise InvalidUsage(sql_error(err), 500)
     for task in tasks:
         if task['start_date']:
-             raise InvalidUsage("Assignment %s has one or more started tasks" % assignment_id, 400)
+            raise InvalidUsage("Assignment %s has one or more started tasks" % assignment_id, 400)
     try:
         stmt = "UPDATE task SET assignment_id=NULL WHERE assignment_id = %s"
         bind = (assignment_id)

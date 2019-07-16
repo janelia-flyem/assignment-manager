@@ -99,8 +99,6 @@ DROP TABLE IF EXISTS `project`;
 CREATE TABLE `project` ( 
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
-  `roi` varchar(256) CHARACTER SET latin1 COLLATE latin1_general_cs,
-  `status` varchar(256) CHARACTER SET latin1 COLLATE latin1_general_cs,
   `disposition` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs,
   `protocol_id` int(10) unsigned NOT NULL,
   `create_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

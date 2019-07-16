@@ -120,8 +120,6 @@ SELECT
     p.id          AS id,
     p.name        AS name,
     ptype.name    AS protocol,
-    p.roi         AS roi,
-    p.status      AS status,
     p.disposition AS disposition,
     pp.value      AS note,
     p.create_date AS create_date
