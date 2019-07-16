@@ -1,9 +1,10 @@
 import datetime
+import sys
+import time
 from business_duration import businessDuration
 import holidays as pyholidays
 import pandas as pd
 import requests
-import time
 
 BEARER = ''
 CONFIG = {'config': {"url": "http://config.int.janelia.org/"}}
@@ -42,11 +43,11 @@ def working_duration(start_unix, end_unix):
     endstring = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_unix))
     startdate = pd.to_datetime(startstring)
     enddate = pd.to_datetime(endstring)
-    working_duration = businessDuration(startdate,enddate,open_time,close_time,
-                                        holidaylist=holidaylist,unit='hour') * 3600
+    work_duration = businessDuration(startdate, enddate, open_time, close_time,
+                                     holidaylist=holidaylist, unit='hour') * 3600
     try:
-        working_duration = int(working_duration)
+        work_duration = int(work_duration)
     except ValueError as err:
         print(str(err) + ' for ' + startstring + ', ' + endstring)
-        working_duration = duration
-    return working_duration
+        work_duration = end_unix - start_unix
+    return work_duration
