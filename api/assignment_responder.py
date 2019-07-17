@@ -633,9 +633,9 @@ def generate_project(protocol, result):
     # Instattiate project
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
-    # Query NeuPrint
-    response = query_neuprint(projectins, result, ipd)
     # Create tasks in memory
+    method = projectins.task_populate_method
+    response = globals()[method](projectins, result, ipd)
     build_tasks(ipd, response, projectins, result)
     result['rest']['row_count'] = len(result['tasks'])
     if not result['tasks']:

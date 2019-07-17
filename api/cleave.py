@@ -4,6 +4,7 @@ class Cleave:
 
     def __init__(self):
         self.num_tasks = 100
+        self.task_populate_method = 'query_neuprint'
         self.unit = 'body_id'
         self.cypher_unit = 'bodyId'
         self.allowable_filters = []
