@@ -487,6 +487,36 @@ def check_missing_parms(ipd, required):
     if missing:
         raise InvalidUsage('Missing arguments: ' + missing)
 
+def generate_tasks2(result, key_type, new_project):
+    ''' Generate and persist a list of tasks for a project
+        Keyword arguments:
+          result: result dictionary
+          key_type: type of key
+          new_project: indicates if this is a new or existing project
+    '''
+    ignored = inserted = 0
+    if not new_project:
+        project_id = result['rest']['inserted_id']
+        existing_task = dict()
+        try:
+            g.c.execute("SELECT assignment_id,key_text FROM task WHERE project_id=%s", (project_id))
+            existing = g.c.fetchall()
+            for extask in existing:
+                existing_task[extask['key_text']] = extask['assignment_id']
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+    insert_list = []
+    for task in result['tasks']:
+        key = str(task[key_type])
+        if key in existing:
+            ignored += 1
+        else:
+            name = "%d.%s" % (result['rest']['inserted_id'], key)
+            bind = (name, result['rest']['inserted_id'], key_type,
+                    key, result['rest']['user'],)
+            insert_list.append(bind)
+    g.c.executemany(WRITE['INSERT_TASK'], insert_list)
+
 
 def generate_tasks(result, key_type, new_project):
     ''' Generate and persist a list of tasks for a project
