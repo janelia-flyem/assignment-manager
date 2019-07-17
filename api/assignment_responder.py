@@ -574,7 +574,7 @@ def get_key_type_id(key_type):
 
 
 def query_neuprint(projectins, result, ipd):
-    ''' Build and execute NeuPrint Cypher query
+    ''' Build and execute NeuPrint Cypher query and add tasks to result['tasks']
         Keyword arguments:
           projectins: project instance
           result: result dictionary
@@ -590,7 +590,29 @@ def query_neuprint(projectins, result, ipd):
         raise InvalidUsage(message, 500)
     if not response['data']:
         raise InvalidUsage('No neurons found', 404)
-    return response
+    nlist = []
+    if app.config['DEBUG']:
+        print("Creating %s task(s)" % (len(response['data'])))
+    for row in response['data']:
+        ndat = row[0]
+        if not filter_greater_than(projectins, ndat, ipd):
+            continue
+        status = ''
+        if 'status' in ndat:
+            status = ndat['status']
+        timestamp = ''
+        if 'timestamp' in ndat:
+            timestamp = ndat['timeStamp']
+        this_dict = {"post": ndat['post'],
+                     "pre": ndat['pre'],
+                     "size": ndat['size'],
+                     "status": status,
+                     "timestamp": timestamp}
+        if 'clusterName' in ndat:
+            this_dict['cluster_name'] = ndat['clusterName']
+        this_dict[projectins.unit] = ndat[projectins.cypher_unit]
+        nlist.append(this_dict)
+    result['tasks'] = sorted(nlist, key=lambda i: i['timestamp'])
 
 
 def insert_project(ipd, result):
@@ -635,8 +657,8 @@ def generate_project(protocol, result):
     projectins = constructor()
     # Create tasks in memory
     method = projectins.task_populate_method
-    response = globals()[method](projectins, result, ipd)
-    build_tasks(ipd, response, projectins, result)
+    globals()[method](projectins, result, ipd)
+    # build_tasks(ipd, response, projectins, result)
     result['rest']['row_count'] = len(result['tasks'])
     if not result['tasks']:
         return
@@ -820,39 +842,6 @@ def start_assignment(ipd, result):
     message = {"mad_id": assignment['id'], "user": assignment['user'],
                "start_time": start_time, "protocol": assignment['protocol']}
     publish_kafka('assignment_start', result, message)
-
-
-def build_tasks(ipd, response, project, result):
-    ''' Build a list of tasks.
-        Keyword arguments:
-          ipd: request payload
-          response: NeuPrint response
-          project: project instance
-          result: result dictionary
-    '''
-    nlist = []
-    if app.config['DEBUG']:
-        print("Creating %s task(s)" % (len(response['data'])))
-    for row in response['data']:
-        ndat = row[0]
-        if not filter_greater_than(project, ndat, ipd):
-            continue
-        status = ''
-        if 'status' in ndat:
-            status = ndat['status']
-        timestamp = ''
-        if 'timestamp' in ndat:
-            timestamp = ndat['timeStamp']
-        this_dict = {"post": ndat['post'],
-                     "pre": ndat['pre'],
-                     "size": ndat['size'],
-                     "status": status,
-                     "timestamp": timestamp}
-        if 'clusterName' in ndat:
-            this_dict['cluster_name'] = ndat['clusterName']
-        this_dict[project.unit] = ndat[project.cypher_unit]
-        nlist.append(this_dict)
-    result['tasks'] = sorted(nlist, key=lambda i: i['timestamp'])
 
 
 def get_task_by_id(tid):
