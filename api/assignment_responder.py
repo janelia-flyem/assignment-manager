@@ -546,7 +546,7 @@ def valid_cv_term(cv, cv_term):
     ''' Determine if a CV term is valid for a given CV
         Keyword arguments:
           cv: CV
-          rcv_term CV term
+          cv_term: CV term
     '''
     if cv not in app.config['VALID_TERMS']:
         g.c.execute("SELECT cv_term FROM cv_term_vw WHERE cv=%s", (cv))
@@ -558,6 +558,10 @@ def valid_cv_term(cv, cv_term):
 
 
 def get_key_type_id(key_type):
+    ''' Determthe ID for a key type
+        Keyword arguments:
+          key_type: key type
+    '''
     if key_type not in app.config['KEY_TYPE_IDS']:
         try:
             g.c.execute("SELECT id,cv_term FROM cv_term_vw WHERE cv='key'")
@@ -589,6 +593,26 @@ def query_neuprint(projectins, result, ipd):
     return response
 
 
+def insert_project(ipd, result):
+    ''' Insert a new project
+        Keyword arguments:
+          ipd: request payload
+          result: result dictionary
+    '''
+    # Insert project record
+    if ipd['project_name'].isdigit():
+        raise InvalidUsage("Project name must have at least one alphabetic character", 400)
+    try:
+        bind = (ipd['project_name'], ipd['protocol'])
+        g.c.execute(WRITE['INSERT_PROJECT'], bind)
+        result['rest']['row_count'] = g.c.rowcount
+        result['rest']['inserted_id'] = g.c.lastrowid
+        result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_PROJECT'], bind)
+        publish_cdc(result, {"table": "project", "operation": "insert"})
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+
+
 def generate_project(protocol, result):
     ''' Generate and persist a project (and its tasks).
         Keyword arguments:
@@ -598,6 +622,8 @@ def generate_project(protocol, result):
     # Get payload
     ipd = receive_payload(result)
     check_missing_parms(ipd, ['project_name'])
+    if ipd['project_name'].isdigit():
+        raise InvalidUsage("Project name must have at least one alphabetic character", 400)
     if app.config['DEBUG']:
         print("Generating %s project %s" % (protocol, ipd['project_name']))
     ipd['protocol'] = protocol
@@ -615,27 +641,15 @@ def generate_project(protocol, result):
     if not result['tasks']:
         return
     # Create or rebuild project
-    try:
-        g.c.execute(READ['PROJECT'], (ipd['project_name']))
-        project = g.c.fetchone()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
+    project = get_project_by_name_or_id(ipd['project_name'])
     new_project = True
     if project:
+        ipd['project_name'] = project['name']
         result['rest']['inserted_id'] = project['id']
         new_project = False
         print("Project %s already exists" % (project['id']))
     else:
-        # Insert project record
-        try:
-            bind = (ipd['project_name'], ipd['protocol'])
-            g.c.execute(WRITE['INSERT_PROJECT'], bind)
-            result['rest']['row_count'] = g.c.rowcount
-            result['rest']['inserted_id'] = g.c.lastrowid
-            result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_PROJECT'], bind)
-            publish_cdc(result, {"table": "project", "operation": "insert"})
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
+        insert_project(ipd, result)
     # Add project properties from input parameters
     for parm in projectins.optional_properties:
         if parm in ipd:
@@ -720,13 +734,10 @@ def generate_assignment(ipd, result):
           result: result dictionary
     '''
     # Find the project
-    try:
-        g.c.execute(READ['PROJECT'], (ipd['project_name']))
-        project = g.c.fetchone()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
+    project = get_project_by_name_or_id(ipd['project_name'])
     if not project:
         raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
+    ipd['project_name'] = project['name']
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
     if 'tasks' in ipd:
@@ -1875,7 +1886,7 @@ def process_project(protocol):
         required: true
         description: protocol
       - in: query
-        name: project_name
+        name: project_name (or ID for an existing project)
         schema:
           type: string
         required: true
@@ -2215,7 +2226,7 @@ def new_assignment(project_name):
         schema:
           type: string
         required: true
-        description: project name
+        description: project name or ID
     responses:
       200:
           description: Assignment generated
@@ -2453,9 +2464,9 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
 @app.route('/tasks/<string:protocol>/<string:project_name>', methods=['OPTIONS', 'POST'])
 def new_tasks_for_project(protocol, project_name):
     '''
-    Generate one or more new tasks for an existing project
-    Given a JSON payload containing specifics, generate new tasks for an
-    existing project and return the task IDs.
+    Generate one or more new tasks for a new or existing project
+    Given a JSON payload containing specifics, generate new tasks for a
+    new or existing project and return the task IDs.
     Parameters may be passed in as JSON.
     ---
     tags:
@@ -2482,19 +2493,24 @@ def new_tasks_for_project(protocol, project_name):
     result = initialize_result()
     # Get payload
     ipd = receive_payload(result)
+    ipd['protocol'] = protocol
+    ipd['project_name'] = project_name
     project = get_project_by_name_or_id(project_name)
-    if not project:
-        raise InvalidUsage("Project %s was not found" % project_name)
-    if not isinstance(ipd, (list)):
+    if not isinstance(ipd['keys'], (list)):
         raise InvalidUsage("Payload must be a JSON list of body IDs")
+    if not project:
+        insert_project(ipd, result)
+        project = dict()
+        project['id'] = result['rest']['inserted_id']
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
-    for key in ipd:
+    for key in ipd['keys']:
         task = get_task_by_key(project['id'], projectins.unit, key)
         if task:
-            raise InvalidUsage("Task exists for %s %s in project %s" % (projectins.unit, key, project['id']))
+            raise InvalidUsage("Task exists for %s %s in project %s" \
+                               % (projectins.unit, key, project['id']))
     result['tasks'] = dict()
-    for key in ipd:
+    for key in ipd['keys']:
         bind = ('', project['id'], projectins.unit,
                 str(key), result['rest']['user'],)
         try:
