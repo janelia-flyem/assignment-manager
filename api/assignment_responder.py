@@ -85,12 +85,18 @@ app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
 SERVER = dict()
 CORS(app)
-CONN = pymysql.connect(host=app.config['MYSQL_DATABASE_HOST'],
-                       user=app.config['MYSQL_DATABASE_USER'],
-                       password=app.config['MYSQL_DATABASE_PASSWORD'],
-                       db=app.config['MYSQL_DATABASE_DB'],
-                       cursorclass=pymysql.cursors.DictCursor)
-CURSOR = CONN.cursor()
+try:
+    CONN = pymysql.connect(host=app.config['MYSQL_DATABASE_HOST'],
+                           user=app.config['MYSQL_DATABASE_USER'],
+                           password=app.config['MYSQL_DATABASE_PASSWORD'],
+                           db=app.config['MYSQL_DATABASE_DB'],
+                           cursorclass=pymysql.cursors.DictCursor)
+    CURSOR = CONN.cursor()
+except Exception as err:
+    template = "An exception of type {0} occurred. Arguments:\n{1!r}"
+    message = template.format(type(err).__name__, err.args)
+    print(message)
+    sys.exit(-1)
 app.config['STARTTIME'] = time()
 app.config['STARTDT'] = datetime.now()
 IDCOLUMN = 0
@@ -136,17 +142,21 @@ def before_request():
     g.db = CONN
     g.c = CURSOR
     if not SERVER:
-        data = call_responder('config', 'config/rest_services')
-        assignment_utilities.CONFIG = data['config']
-        data = call_responder('config', 'config/servers')
-        SERVER = data['config']
+        try:
+            data = call_responder('config', 'config/rest_services')
+            assignment_utilities.CONFIG = data['config']
+            data = call_responder('config', 'config/servers')
+            SERVER = data['config']
+        except Exception as err: # pragma: no cover
+            template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+            message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
+            raise InvalidUsage(message, 500)
         try:
             ESEARCH = elasticsearch.Elasticsearch(SERVER['elk-elastic']['address'])
         except Exception as err: # pragma: no cover
             template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
             message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
-            print(message)
-            sys.exit(-1)
+            raise InvalidUsage(message, 500)
         PRODUCER = KafkaProducer(bootstrap_servers=SERVER['Kafka']['broker_list'])
     START_TIME = time()
     app.config['COUNTER'] += 1
@@ -487,17 +497,19 @@ def check_missing_parms(ipd, required):
     if missing:
         raise InvalidUsage('Missing arguments: ' + missing)
 
-def generate_tasks2(result, key_type, new_project):
+
+def generate_tasks2(result, key_type, existing_project):
     ''' Generate and persist a list of tasks for a project
         Keyword arguments:
           result: result dictionary
           key_type: type of key
-          new_project: indicates if this is a new or existing project
+          existing_project: indicates if this is a new or existing project
     '''
     ignored = inserted = 0
-    if not new_project:
+    existing_task = dict()
+    if existing_project:
+        # Find existing tasks and put them in the existing_task dictionary
         project_id = result['rest']['inserted_id']
-        existing_task = dict()
         try:
             g.c.execute("SELECT assignment_id,key_text FROM task WHERE project_id=%s", (project_id))
             existing = g.c.fetchall()
@@ -508,14 +520,25 @@ def generate_tasks2(result, key_type, new_project):
     insert_list = []
     for task in result['tasks']:
         key = str(task[key_type])
-        if key in existing:
+        if key in existing_task:
             ignored += 1
         else:
             name = "%d.%s" % (result['rest']['inserted_id'], key)
             bind = (name, result['rest']['inserted_id'], key_type,
                     key, result['rest']['user'],)
             insert_list.append(bind)
-    g.c.executemany(WRITE['INSERT_TASK'], insert_list)
+    if insert_list:
+        try:
+            g.c.executemany(WRITE['INSERT_TASK'], insert_list)
+            result['rest']['row_count'] += g.c.rowcount
+            inserted = g.c.rowcount
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+    # We still have to insert the properties
+    if ignored:
+        result['rest']['tasks_skipped'] = ignored
+    if inserted:
+        result['rest']['tasks_inserted'] = inserted
 
 
 def generate_tasks(result, key_type, new_project):
@@ -622,7 +645,7 @@ def query_neuprint(projectins, result, ipd):
         raise InvalidUsage('No neurons found', 404)
     nlist = []
     if app.config['DEBUG']:
-        print("Creating %s task(s)" % (len(response['data'])))
+        print("Filtering %s potential tasks" % (len(response['data'])))
     for row in response['data']:
         ndat = row[0]
         if not filter_greater_than(projectins, ndat, ipd):
@@ -643,6 +666,7 @@ def query_neuprint(projectins, result, ipd):
         this_dict[projectins.unit] = ndat[projectins.cypher_unit]
         nlist.append(this_dict)
     result['tasks'] = sorted(nlist, key=lambda i: i['timestamp'])
+    print("%s tasks(s) remain after filtering" % (len(result['tasks'])))
 
 
 def insert_project(ipd, result):
@@ -689,17 +713,16 @@ def generate_project(protocol, result):
     method = projectins.task_populate_method
     globals()[method](projectins, result, ipd)
     # build_tasks(ipd, response, projectins, result)
-    result['rest']['row_count'] = len(result['tasks'])
     if not result['tasks']:
         return
     # Create or rebuild project
     project = get_project_by_name_or_id(ipd['project_name'])
-    new_project = True
+    existing_project = False
     if project:
         ipd['project_name'] = project['name']
         result['rest']['inserted_id'] = project['id']
-        new_project = False
-        print("Project %s already exists" % (project['id']))
+        existing_project = True
+        print("Project %s (ID %s) already exists" % (project['name'], project['id']))
     else:
         insert_project(ipd, result)
     # Add project properties from input parameters
@@ -711,7 +734,7 @@ def generate_project(protocol, result):
     update_property(result['rest']['inserted_id'], result, 'project', 'filter', json.dumps(ipd))
     result['rest']['row_count'] += g.c.rowcount
     # Insert tasks into the database
-    generate_tasks(result, projectins.unit, new_project)
+    generate_tasks2(result, projectins.unit, existing_project)
     g.db.commit()
 
 
