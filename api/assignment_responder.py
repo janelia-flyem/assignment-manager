@@ -23,11 +23,13 @@ import pymysql.cursors
 import requests
 
 import assignment_utilities
-from assignment_utilities import call_responder, working_duration
+from assignment_utilities import (InvalidUsage, call_responder, get_assignment_by_id,
+                                  get_key_type_id, get_task_by_id, sql_error, working_duration)
 
 # pylint: disable=W0611
 from orphan_link import Orphan_link
 from cleave import Cleave
+from tasks import generate_tasks
 
 # SQL statements
 READ = {
@@ -79,7 +81,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 app = Flask(__name__)
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -93,39 +95,15 @@ try:
                            cursorclass=pymysql.cursors.DictCursor)
     CURSOR = CONN.cursor()
 except Exception as err:
-    template = "An exception of type {0} occurred. Arguments:\n{1!r}"
-    message = template.format(type(err).__name__, err.args)
-    print(message)
+    ttemplate = "An exception of type {0} occurred. Arguments:\n{1!r}"
+    tmessage = ttemplate.format(type(err).__name__, err.args)
+    print(tmessage)
     sys.exit(-1)
 app.config['STARTTIME'] = time()
 app.config['STARTDT'] = datetime.now()
 IDCOLUMN = 0
 START_TIME = ESEARCH = PRODUCER = ''
 
-
-# *****************************************************************************
-# * Classes                                                                   *
-# *****************************************************************************
-
-
-class InvalidUsage(Exception):
-    ''' Return an error response
-    '''
-    status_code = 400
-
-    def __init__(self, message, status_code=None, payload=None):
-        Exception.__init__(self)
-        self.message = message
-        if status_code is not None:
-            self.status_code = status_code
-        self.payload = payload
-
-    def to_dict(self):
-        ''' Build error response
-        '''
-        retval = dict(self.payload or ())
-        retval['rest'] = {'error': self.message}
-        return retval
 
 # *****************************************************************************
 # * Flask                                                                     *
@@ -148,15 +126,15 @@ def before_request():
             data = call_responder('config', 'config/servers')
             SERVER = data['config']
         except Exception as err: # pragma: no cover
-            template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
-            message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
-            raise InvalidUsage(message, 500)
+            temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+            mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+            raise InvalidUsage(mess, 500)
         try:
             ESEARCH = elasticsearch.Elasticsearch(SERVER['elk-elastic']['address'])
         except Exception as err: # pragma: no cover
-            template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
-            message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
-            raise InvalidUsage(message, 500)
+            temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+            mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+            raise InvalidUsage(mess, 500)
         PRODUCER = KafkaProducer(bootstrap_servers=SERVER['Kafka']['broker_list'])
     START_TIME = time()
     app.config['COUNTER'] += 1
@@ -194,21 +172,6 @@ def call_profile(token):
     print("Could not get response from %s" % (url))
     print(req)
     sys.exit(-1)
-
-
-def sql_error(err):
-    ''' given a MySQL error, return the error message
-        Keyword arguments:
-          err: MySQL error
-    '''
-    error_msg = ''
-    try:
-        error_msg = "MySQL error [%d]: %s" % (err.args[0], err.args[1])
-    except IndexError:
-        error_msg = "Error: %s" % err
-    if error_msg:
-        print(error_msg)
-    return error_msg
 
 
 def initialize_result():
@@ -464,9 +427,9 @@ def receive_payload(result):
             result['rest']['json'] = request.json
             pay = request.json
     except Exception as err:
-        template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
-        message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
-        raise InvalidUsage(message, 500)
+        temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+        mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+        raise InvalidUsage(mess, 500)
     return pay
 
 
@@ -498,56 +461,15 @@ def check_missing_parms(ipd, required):
         raise InvalidUsage('Missing arguments: ' + missing)
 
 
-def generate_tasks2(result, key_type, existing_project):
+def generate_tasks_DEPRECATED(result, projectins, new_project):
     ''' Generate and persist a list of tasks for a project
         Keyword arguments:
           result: result dictionary
-          key_type: type of key
-          existing_project: indicates if this is a new or existing project
-    '''
-    ignored = inserted = 0
-    existing_task = dict()
-    if existing_project:
-        # Find existing tasks and put them in the existing_task dictionary
-        project_id = result['rest']['inserted_id']
-        try:
-            g.c.execute("SELECT assignment_id,key_text FROM task WHERE project_id=%s", (project_id))
-            existing = g.c.fetchall()
-            for extask in existing:
-                existing_task[extask['key_text']] = extask['assignment_id']
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
-    insert_list = []
-    for task in result['tasks']:
-        key = str(task[key_type])
-        if key in existing_task:
-            ignored += 1
-        else:
-            name = "%d.%s" % (result['rest']['inserted_id'], key)
-            bind = (name, result['rest']['inserted_id'], key_type,
-                    key, result['rest']['user'],)
-            insert_list.append(bind)
-    if insert_list:
-        try:
-            g.c.executemany(WRITE['INSERT_TASK'], insert_list)
-            result['rest']['row_count'] += g.c.rowcount
-            inserted = g.c.rowcount
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
-    # We still have to insert the properties
-    if ignored:
-        result['rest']['tasks_skipped'] = ignored
-    if inserted:
-        result['rest']['tasks_inserted'] = inserted
-
-
-def generate_tasks(result, key_type, new_project):
-    ''' Generate and persist a list of tasks for a project
-        Keyword arguments:
-          result: result dictionary
-          key_type: type of key
+          projectins: project instance
           new_project: indicates if this is a new or existing project
     '''
+    perfstart = datetime.now()
+    key_type = projectins.unit
     ignored = inserted = 0
     if not new_project:
         # Delete unassigned tasks
@@ -578,7 +500,7 @@ def generate_tasks(result, key_type, new_project):
             task_id = g.c.lastrowid
             result['rest']['row_count'] += g.c.rowcount
             inserted += 1
-            bind = (result['rest']['inserted_id'], task_id, get_key_type_id(key_type),
+            bind = (result['rest']['inserted_id'], None, get_key_type_id(key_type),
                     str(task[key_type]), 'Inserted', result['rest']['user'])
             g.c.execute(WRITE['TASK_AUDIT'], bind)
             publish_cdc(result, {"table": "task", "operation": "insert"})
@@ -589,10 +511,11 @@ def generate_tasks(result, key_type, new_project):
             if prop in task:
                 update_property(task_id, result, 'task', prop, task[prop])
                 result['rest']['row_count'] += g.c.rowcount
-        if ignored:
-            result['rest']['tasks_skipped'] = ignored
-        if inserted:
-            result['rest']['tasks_inserted'] = inserted
+    result['rest']['elapsed_task_generation'] = str(datetime.now() - perfstart)
+    if ignored:
+        result['rest']['tasks_skipped'] = ignored
+    if inserted:
+        result['rest']['tasks_inserted'] = inserted
 
 
 def valid_cv_term(cv, cv_term):
@@ -610,22 +533,6 @@ def valid_cv_term(cv, cv_term):
     return 1 if cv_term in app.config['VALID_TERMS'][cv] else 0
 
 
-def get_key_type_id(key_type):
-    ''' Determthe ID for a key type
-        Keyword arguments:
-          key_type: key type
-    '''
-    if key_type not in app.config['KEY_TYPE_IDS']:
-        try:
-            g.c.execute("SELECT id,cv_term FROM cv_term_vw WHERE cv='key'")
-            cv_terms = g.c.fetchall()
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
-        for term in cv_terms:
-            app.config['KEY_TYPE_IDS'][term['cv_term']] = term['id']
-    return app.config['KEY_TYPE_IDS'][key_type]
-
-
 def query_neuprint(projectins, result, ipd):
     ''' Build and execute NeuPrint Cypher query and add tasks to result['tasks']
         Keyword arguments:
@@ -638,9 +545,9 @@ def query_neuprint(projectins, result, ipd):
     except AssertionError as err:
         raise InvalidUsage(err.args[0])
     except Exception as err:
-        template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
-        message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
-        raise InvalidUsage(message, 500)
+        temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+        mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+        raise InvalidUsage(mess, 500)
     if not response['data']:
         raise InvalidUsage('No neurons found', 404)
     nlist = []
@@ -734,7 +641,7 @@ def generate_project(protocol, result):
     update_property(result['rest']['inserted_id'], result, 'project', 'filter', json.dumps(ipd))
     result['rest']['row_count'] += g.c.rowcount
     # Insert tasks into the database
-    generate_tasks2(result, projectins.unit, existing_project)
+    generate_tasks(result, projectins, existing_project)
     g.db.commit()
 
 
@@ -751,19 +658,6 @@ def get_project_by_name_or_id(proj):
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     return project
-
-
-def get_assignment_by_id(aid):
-    ''' Get an assignment by ID
-        Keyword arguments:
-          aid: assignment ID
-    '''
-    try:
-        g.c.execute(READ['ASSIGNMENT'], (aid))
-        assignment = g.c.fetchone()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    return assignment
 
 
 def get_unassigned_project_tasks(ipd, project_id, num_tasks):
@@ -897,19 +791,6 @@ def start_assignment(ipd, result):
     publish_kafka('assignment_start', result, message)
 
 
-def get_task_by_id(tid):
-    ''' Get a task by ID
-        Keyword arguments:
-          tid: task ID
-    '''
-    try:
-        g.c.execute(READ['TASK'], (tid))
-        task = g.c.fetchone()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    return task
-
-
 def get_task_by_key(pid, key_type, key):
     ''' Get a task by project ID/key type/key
         Keyword arguments:
@@ -933,6 +814,8 @@ def start_task(ipd, result):
         raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
     if task['start_date']:
         raise InvalidUsage("Task %s was already started" % ipd['id'], 400)
+    if not task['assignment_id']:
+        raise InvalidUsage("Task %s is not assigned" % ipd['id'], 400)
     # Check the asignment
     assignment = get_assignment_by_id(task['assignment_id'])
     if not assignment['start_date']:
@@ -1135,9 +1018,9 @@ def stats():
     try:
         g.db.ping(reconnect=False)
     except Exception as err:
-        template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
-        message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
-        result['rest']['error'] = message
+        temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+        mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+        result['rest']['error'] = mess
         db_connection = False
     try:
         start = datetime.fromtimestamp(app.config['STARTTIME']).strftime('%Y-%m-%d %H:%M:%S')
@@ -1155,9 +1038,9 @@ def stats():
         if None in result['stats']['endpoint_counts']:
             del result['stats']['endpoint_counts']
     except Exception as err:
-        template = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
-        message = template.format(type(err).__name__, err.args, inspect.stack()[0][3])
-        raise InvalidUsage(message, 500)
+        temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+        mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+        raise InvalidUsage(mess, 500)
     return generate_response(result)
 
 
@@ -2559,7 +2442,7 @@ def new_tasks_for_project(protocol, project_name):
             g.c.execute(WRITE['INSERT_TASK'], bind)
             result['rest']['row_count'] += g.c.rowcount
             result['tasks'][key] = g.c.lastrowid
-            bind = (project['id'], g.c.lastrowid, get_key_type_id(projectins.unit),
+            bind = (project['id'], None, get_key_type_id(projectins.unit),
                     key, 'Inserted', result['rest']['user'])
             g.c.execute(WRITE['TASK_AUDIT'], bind)
         except Exception as err:

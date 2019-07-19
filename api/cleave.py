@@ -1,4 +1,5 @@
 from assignment_utilities import call_responder
+from datetime import datetime
 
 class Cleave:
 
@@ -9,11 +10,13 @@ class Cleave:
         self.cypher_unit = 'bodyId'
         self.allowable_filters = []
         self.optional_properties = ['size', 'roi', 'status', 'note']
+        self.task_insert_props = ['cluster_name', 'post', 'pre', 'status']
 
     def cypher(self, result, ipd):
         '''
         Given a size, and optional ROI and status, generate the Cypher query
         '''
+        perfstart = datetime.now()
         assert 'size' in ipd and ipd['size'], \
                "Cannot generate orphan_link Cypher query: missing ROI"
         size_clause = "(n.size>=" + str(ipd['size']) + ")"
@@ -43,4 +46,5 @@ class Cleave:
             response = call_responder('neuprint', 'custom/custom', payload)
         except Exception as err:
             raise err
+        result['rest']['elapsed_neuprint_query'] = str(datetime.now() - perfstart)
         return response

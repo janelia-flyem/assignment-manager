@@ -1,4 +1,5 @@
 from assignment_utilities import call_responder
+from datetime import datetime
 
 class Orphan_link:
 
@@ -9,11 +10,13 @@ class Orphan_link:
         self.cypher_unit = 'bodyId'
         self.allowable_filters = ['post', 'pre', 'size']
         self.optional_properties = ['roi', 'status', 'note']
+        self.task_insert_props = ['cluster_name', 'post', 'pre', 'status']
 
     def cypher(self, result, ipd):
         '''
         Given an optional ROI and status, generate the Cypher query
         '''
+        perfstart = datetime.now()
         assert 'roi' in ipd and ipd['roi'], \
                "Cannot generate orphan_link Cypher query: missing ROI"
         in_list = ipd['roi'].split(',')
@@ -37,4 +40,5 @@ class Orphan_link:
             response = call_responder('neuprint', 'custom/custom', payload)
         except Exception as err:
             raise err
+        result['rest']['elapsed_neuprint_query'] = str(datetime.now() - perfstart)
         return response
