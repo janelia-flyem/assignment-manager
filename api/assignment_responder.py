@@ -619,10 +619,9 @@ def generate_project(protocol, result):
     # Create tasks in memory
     method = projectins.task_populate_method
     globals()[method](projectins, result, ipd)
-    # build_tasks(ipd, response, projectins, result)
     if not result['tasks']:
         return
-    # Create or rebuild project
+    # We have tasks! Create a project (unless it already exists).
     project = get_project_by_name_or_id(ipd['project_name'])
     existing_project = False
     if project:
@@ -641,8 +640,7 @@ def generate_project(protocol, result):
     update_property(result['rest']['inserted_id'], result, 'project', 'filter', json.dumps(ipd))
     result['rest']['row_count'] += g.c.rowcount
     # Insert tasks into the database
-    generate_tasks(result, projectins, existing_project)
-    g.db.commit()
+    generate_tasks(result, projectins.unit, projectins.task_insert_props, existing_project)
 
 
 def get_project_by_name_or_id(proj):

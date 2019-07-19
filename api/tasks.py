@@ -3,7 +3,6 @@ from flask import g
 import assignment_utilities
 from assignment_utilities import InvalidUsage, get_key_type_id, sql_error
 
-
 WRITE = {
     'INSERT_TASK': "INSERT INTO task (name,project_id,key_type_id,key_text,"
                    + "user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s)",
@@ -12,15 +11,16 @@ WRITE = {
 }
 
 
-def generate_tasks(result, projectins, existing_project):
+def generate_tasks(result, key_type, task_insert_props, existing_project):
     ''' Generate and persist a list of tasks for a project
         Keyword arguments:
           result: result dictionary
-          projectins: project instance
+          key_type: key type
+          task_insert_props: project properties to persist
           existing_project: indicates if this is a new or existing project
     '''
     perfstart = datetime.now()
-    key_type = projectins.unit
+    #key_type = projectins.unit
     ignored = inserted = 0
     existing_task = dict()
     project_id = result['rest']['inserted_id']
@@ -74,7 +74,7 @@ def generate_tasks(result, projectins, existing_project):
                 bind = (project_id, None, get_key_type_id(key_type),
                         key, 'Inserted', result['rest']['user'])
                 audit_list.append(bind)
-            for prop in projectins.task_insert_props:
+            for prop in task_insert_props:
                 if prop in query_task[key]:
                     value = query_task[key][prop]
                     bind = (existing_task[key], prop, value, value)
@@ -96,3 +96,4 @@ def generate_tasks(result, projectins, existing_project):
         result['rest']['tasks_skipped'] = ignored
     if inserted:
         result['rest']['tasks_inserted'] = inserted
+    g.db.commit()
