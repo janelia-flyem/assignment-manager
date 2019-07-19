@@ -383,8 +383,6 @@ def generate_response(result):
         Keyword arguments:
           result: result dictionary
     '''
-    # pylint: disable=W0603
-    global START_TIME
     result['rest']['elapsed_time'] = str(timedelta(seconds=(time() - START_TIME)))
     return jsonify(**result)
 
