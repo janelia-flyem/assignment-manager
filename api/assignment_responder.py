@@ -24,12 +24,13 @@ import requests
 
 import assignment_utilities
 from assignment_utilities import (InvalidUsage, call_responder, get_assignment_by_id,
-                                  get_key_type_id, get_task_by_id, sql_error, working_duration)
+                                  get_task_by_id, sql_error, update_property,
+                                  working_duration)
 
 # pylint: disable=W0611
 from orphan_link import Orphan_link
 from cleave import Cleave
-from tasks import generate_tasks
+from tasks import create_tasks_from_json, generate_tasks
 
 # SQL statements
 READ = {
@@ -62,7 +63,7 @@ WRITE = {
     'INSERT_TASK': "INSERT INTO task (name,project_id,key_type_id,key_text,"
                    + "user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s)",
     'TASK_AUDIT': "INSERT INTO task_audit (project_id,assignment_id,key_type_id,key_text,"
-                  + "disposition,user) VALUES (%s,%s,%s,%s,%s,%s)",
+                  + "disposition,user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s,%s)",
 }
 
 # pylint: disable=C0302,C0103,W0703
@@ -81,7 +82,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 app = Flask(__name__)
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -387,27 +388,6 @@ def generate_response(result):
     return jsonify(**result)
 
 
-def update_property(pid, result, table, name, value):
-    ''' Insert/update a property
-        Keyword arguments:
-          id: parent ID
-          result: result dictionary
-          table: parent table
-          name: CV term
-          value: value
-    '''
-    stmt = "INSERT INTO %s_property (%s_id,type_id,value) VALUES " \
-           + "(!s,getCvTermId(!s,!s,NULL),!s) ON DUPLICATE KEY UPDATE value=!s"
-    stmt = stmt % (table, table)
-    stmt = stmt.replace('!s', '%s')
-    bind = (pid, table, name, value, value)
-    try:
-        g.c.execute(stmt, bind)
-        publish_cdc(result, {"table": table + "_property", "operation": "update"})
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-
-
 def receive_payload(result):
     ''' Get a request payload (form or JSON).
         Keyword arguments:
@@ -457,63 +437,6 @@ def check_missing_parms(ipd, required):
             missing = missing + prm + ' '
     if missing:
         raise InvalidUsage('Missing arguments: ' + missing)
-
-
-def generate_tasks_DEPRECATED(result, projectins, new_project):
-    ''' Generate and persist a list of tasks for a project
-        Keyword arguments:
-          result: result dictionary
-          projectins: project instance
-          new_project: indicates if this is a new or existing project
-    '''
-    perfstart = datetime.now()
-    key_type = projectins.unit
-    ignored = inserted = 0
-    if not new_project:
-        # Delete unassigned tasks
-        try:
-            g.c.execute(WRITE['DELETE_UNASSIGNED'], (result['rest']['inserted_id']))
-            result['rest']['row_count'] += g.c.rowcount
-            print("Deleted %d unassigned tasks for project %s" \
-                  % (g.c.rowcount, result['rest']['inserted_id']))
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
-    for task in result['tasks']:
-        if not new_project:
-            try:
-                bind = (result['rest']['inserted_id'], key_type, str(task[key_type]))
-                g.c.execute(READ['TASK_EXISTS'], bind)
-                this_task = g.c.fetchone()
-            except Exception as err:
-                raise InvalidUsage(sql_error(err), 500)
-            if this_task:
-                ignored += 1
-                continue
-        # Insert task
-        try:
-            name = "%d.%s" % (result['rest']['inserted_id'], str(task[key_type]))
-            bind = (name, result['rest']['inserted_id'], key_type,
-                    str(task[key_type]), result['rest']['user'],)
-            g.c.execute(WRITE['INSERT_TASK'], bind)
-            task_id = g.c.lastrowid
-            result['rest']['row_count'] += g.c.rowcount
-            inserted += 1
-            bind = (result['rest']['inserted_id'], None, get_key_type_id(key_type),
-                    str(task[key_type]), 'Inserted', result['rest']['user'])
-            g.c.execute(WRITE['TASK_AUDIT'], bind)
-            publish_cdc(result, {"table": "task", "operation": "insert"})
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
-        # Insert task properties
-        for prop in ['cluster_name', 'post', 'pre', 'status']:
-            if prop in task:
-                update_property(task_id, result, 'task', prop, task[prop])
-                result['rest']['row_count'] += g.c.rowcount
-    result['rest']['elapsed_task_generation'] = str(datetime.now() - perfstart)
-    if ignored:
-        result['rest']['tasks_skipped'] = ignored
-    if inserted:
-        result['rest']['tasks_inserted'] = inserted
 
 
 def valid_cv_term(cv, cv_term):
@@ -632,10 +555,10 @@ def generate_project(protocol, result):
     # Add project properties from input parameters
     for parm in projectins.optional_properties:
         if parm in ipd:
-            update_property(result['rest']['inserted_id'], result, 'project', parm, ipd[parm])
+            update_property(result['rest']['inserted_id'], 'project', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     # Add the filter as a project property
-    update_property(result['rest']['inserted_id'], result, 'project', 'filter', json.dumps(ipd))
+    update_property(result['rest']['inserted_id'], 'project', 'filter', json.dumps(ipd))
     result['rest']['row_count'] += g.c.rowcount
     # Insert tasks into the database
     generate_tasks(result, projectins.unit, projectins.task_insert_props, existing_project)
@@ -721,7 +644,7 @@ def generate_assignment(ipd, result):
         raise InvalidUsage(sql_error(err), 500)
     for parm in projectins.optional_properties:
         if parm in ipd:
-            update_property(result['rest']['inserted_id'], result, 'assignment', parm, ipd[parm])
+            update_property(result['rest']['inserted_id'], 'assignment', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     updated = 0
     for task in tasks:
@@ -773,7 +696,7 @@ def start_assignment(ipd, result):
     projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
-            update_property(ipd['id'], result, 'assignment', parm, ipd[parm])
+            update_property(ipd['id'], 'assignment', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     # Update the project
     try:
@@ -836,7 +759,7 @@ def start_task(ipd, result):
     projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
-            update_property(ipd['id'], result, 'task', parm, ipd[parm])
+            update_property(ipd['id'], 'task', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     g.db.commit()
 
@@ -883,7 +806,7 @@ def complete_task(ipd, result):
     projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
-            update_property(ipd['id'], result, 'task', parm, ipd[parm])
+            update_property(ipd['id'], 'task', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     g.db.commit()
 
@@ -2305,7 +2228,7 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
     projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
-            update_property(ipd['id'], result, 'assignment', parm, ipd[parm])
+            update_property(ipd['id'], 'assignment', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     g.db.commit()
     message = {"mad_id": assignment['id'], "user": assignment['user'],
@@ -2417,32 +2340,22 @@ def new_tasks_for_project(protocol, project_name):
     ipd['protocol'] = protocol
     ipd['project_name'] = project_name
     project = get_project_by_name_or_id(project_name)
-    if not isinstance(ipd['keys'], (list)):
-        raise InvalidUsage("Payload must be a JSON list of body IDs")
+    if not isinstance(ipd['tasks'], (dict)):
+        raise InvalidUsage("Payload must be a JSON dictionary")
     if not project:
         insert_project(ipd, result)
         project = dict()
         project['id'] = result['rest']['inserted_id']
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
-    for key in ipd['keys']:
-        task = get_task_by_key(project['id'], projectins.unit, key)
-        if task:
-            raise InvalidUsage("Task exists for %s %s in project %s" \
-                               % (projectins.unit, key, project['id']))
-    result['tasks'] = dict()
-    for key in ipd['keys']:
-        bind = ('', project['id'], projectins.unit,
-                str(key), result['rest']['user'],)
-        try:
-            g.c.execute(WRITE['INSERT_TASK'], bind)
+    # Add project properties from input parameters
+    for parm in projectins.optional_properties:
+        if parm in ipd:
+            update_property(project['id'], 'project', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
-            result['tasks'][key] = g.c.lastrowid
-            bind = (project['id'], None, get_key_type_id(projectins.unit),
-                    key, 'Inserted', result['rest']['user'])
-            g.c.execute(WRITE['TASK_AUDIT'], bind)
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
+    # Create the tasks
+    create_tasks_from_json(ipd, project['id'], projectins.unit,
+                           projectins.task_insert_props, result)
     g.db.commit()
     return generate_response(result)
 

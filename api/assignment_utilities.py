@@ -1,3 +1,7 @@
+''' assignment_utilities.py
+    Assignment manager utilities
+'''
+
 import datetime
 import sys
 import time
@@ -94,6 +98,26 @@ def sql_error(err):
     return error_msg
 
 
+def update_property(pid, table, name, value):
+    ''' Insert/update a property
+        Keyword arguments:
+          id: parent ID
+          result: result dictionary
+          table: parent table
+          name: CV term
+          value: value
+    '''
+    stmt = "INSERT INTO %s_property (%s_id,type_id,value) VALUES " \
+           + "(!s,getCvTermId(!s,!s,NULL),!s) ON DUPLICATE KEY UPDATE value=!s"
+    stmt = stmt % (table, table)
+    stmt = stmt.replace('!s', '%s')
+    bind = (pid, table, name, value, value)
+    try:
+        g.c.execute(stmt, bind)
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+
+
 def call_responder(server, endpoint, payload=''):
     ''' Call a responder
         Keyword arguments:
@@ -121,6 +145,11 @@ def call_responder(server, endpoint, payload=''):
 
 
 def working_duration(start_unix, end_unix):
+    ''' Determine working duration (working hours only)
+        Keyword arguments:
+          start_unix: start time (epoch seconds)
+          end_unix: end time (epoch seconds)
+    '''
     open_time = datetime.time(6, 0, 0)
     close_time = datetime.time(18, 0, 0)
     holidaylist = pyholidays.US()
