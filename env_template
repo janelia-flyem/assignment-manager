@@ -1,0 +1,4 @@
+MYSQL_ROOT_PASSWORD=<assignment database root password>
+MYSQL_DATABASE=assignment
+MYSQL_PORT=3306
+DATA_DIR=<MySQL data directory>

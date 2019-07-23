@@ -20,9 +20,13 @@ The location of the configuration system is in the config.cfg file as CONFIG.
 
 ## Deployment
 
-After installing on the production server, take the following steps to start the system:
+After installing on the production server, set up the environment for Docker.
+Rename env_template to .env, and change any calues enclosed in angle brackets.
+
+Take the following steps to start the system:
 ```
 cd /opt/flask/assignment-responder
+docker-compose up
 sudo systemctl start gunicorn
 sudo systemctl start nginx
 ```
