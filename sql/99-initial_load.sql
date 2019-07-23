@@ -1,6 +1,7 @@
 SET FOREIGN_KEY_CHECKS=0;
 TRUNCATE TABLE task_property;
 TRUNCATE TABLE task;
+TRUNCATE TABLE task_audit;
 TRUNCATE TABLE assignment_property;
 TRUNCATE TABLE assignment;
 TRUNCATE TABLE project_property;

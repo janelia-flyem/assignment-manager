@@ -3,8 +3,10 @@
 '''
 
 import datetime
+import re
 import sys
 import time
+from urllib.parse import parse_qs
 from business_duration import businessDuration
 from flask import g
 import holidays as pyholidays
@@ -41,6 +43,77 @@ class InvalidUsage(Exception):
 # *****************************************************************************
 # * Functions                                                                 *
 # *****************************************************************************
+def add_key_value_pair(key, val, separator, sql, bind):
+    ''' Add a key/value pair to the WHERE clause of a SQL statement
+        Keyword arguments:
+          key: column
+          value: value
+          separator: logical separator (AND, OR)
+          sql: SQL statement
+          bind: bind tuple
+    '''
+    eprefix = ''
+    if not isinstance(key, str):
+        key = key.decode('utf-8')
+    if re.search(r'[!><]$', key):
+        match = re.search(r'[!><]$', key)
+        eprefix = match.group(0)
+        key = re.sub(r'[!><]$', '', key)
+    if not isinstance(val[0], str):
+        val[0] = val[0].decode('utf-8')
+    if '*' in val[0]:
+        val[0] = val[0].replace('*', '%')
+        if eprefix == '!':
+            eprefix = ' NOT'
+        else:
+            eprefix = ''
+        sql += separator + ' ' + key + eprefix + ' LIKE %s'
+    else:
+        sql += separator + ' ' + key + eprefix + '=%s'
+    bind = bind + (val,)
+    return sql, bind
+
+
+def generate_sql(request, result, sql, query=False):
+    ''' Generate a SQL statement and tuple of associated bind variables.
+        Keyword arguments:
+          request: API request
+          result: result dictionary
+          sql: base SQL statement
+          query: uses "id" column if true
+    '''
+    bind = ()
+    # pylint: disable=W0603
+    idcolumn = 0
+    query_string = 'id='+str(query) if query else request.query_string
+    order = ''
+    if query_string:
+        if not isinstance(query_string, str):
+            query_string = query_string.decode('utf-8')
+        ipd = parse_qs(query_string)
+        separator = ' AND' if ' WHERE ' in sql else ' WHERE'
+        for key, val in ipd.items():
+            if key == '_sort':
+                order = ' ORDER BY ' + val[0]
+            elif key == '_columns':
+                sql = sql.replace('*', val[0])
+                varr = val[0].split(',')
+                if 'id' in varr:
+                    idcolumn = 1
+            elif key == '_distinct':
+                if 'DISTINCT' not in sql:
+                    sql = sql.replace('SELECT', 'SELECT DISTINCT')
+            else:
+                sql, bind = add_key_value_pair(key, val, separator, sql, bind)
+                separator = ' AND'
+    sql += order
+    if bind:
+        result['rest']['sql_statement'] = sql % bind
+    else:
+        result['rest']['sql_statement'] = sql
+    return sql, bind, idcolumn
+
+
 def get_assignment_by_id(aid):
     ''' Get an assignment by ID
         Keyword arguments:

@@ -11,7 +11,6 @@ import platform
 import re
 import sys
 from time import time
-from urllib.parse import parse_qs
 import elasticsearch
 from flask import Flask, g, render_template, request, jsonify
 from flask.json import JSONEncoder
@@ -23,9 +22,9 @@ import pymysql.cursors
 import requests
 
 import assignment_utilities
-from assignment_utilities import (InvalidUsage, call_responder, get_assignment_by_id,
-                                  get_task_by_id, sql_error, update_property,
-                                  working_duration)
+from assignment_utilities import (InvalidUsage, call_responder, generate_sql,
+                                  get_assignment_by_id, get_task_by_id,
+                                  sql_error, update_property, working_duration)
 
 # pylint: disable=W0611
 from orphan_link import Orphan_link
@@ -60,8 +59,6 @@ WRITE = {
     'INSERT_CVTERM' : "INSERT INTO cv_term (cv_id,name,definition,display_name"
                       + ",is_current,data_type) VALUES (getCvId(%s,''),%s,%s,"
                       + "%s,%s,%s)",
-    'INSERT_TASK': "INSERT INTO task (name,project_id,key_type_id,key_text,"
-                   + "user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s)",
     'TASK_AUDIT': "INSERT INTO task_audit (project_id,assignment_id,key_type_id,key_text,"
                   + "disposition,user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s,%s)",
 }
@@ -201,77 +198,6 @@ def initialize_result():
     return result
 
 
-def add_key_value_pair(key, val, separator, sql, bind):
-    ''' Add a key/value pair to the WHERE clause of a SQL statement
-        Keyword arguments:
-          key: column
-          value: value
-          separator: logical separator (AND, OR)
-          sql: SQL statement
-          bind: bind tuple
-    '''
-    eprefix = ''
-    if not isinstance(key, str):
-        key = key.decode('utf-8')
-    if re.search(r'[!><]$', key):
-        match = re.search(r'[!><]$', key)
-        eprefix = match.group(0)
-        key = re.sub(r'[!><]$', '', key)
-    if not isinstance(val[0], str):
-        val[0] = val[0].decode('utf-8')
-    if '*' in val[0]:
-        val[0] = val[0].replace('*', '%')
-        if eprefix == '!':
-            eprefix = ' NOT'
-        else:
-            eprefix = ''
-        sql += separator + ' ' + key + eprefix + ' LIKE %s'
-    else:
-        sql += separator + ' ' + key + eprefix + '=%s'
-    bind = bind + (val,)
-    return sql, bind
-
-
-def generate_sql(result, sql, query=False):
-    ''' Generate a SQL statement and tuple of associated bind variables.
-        Keyword arguments:
-          result: result dictionary
-          sql: base SQL statement
-          query: uses "id" column if true
-    '''
-    bind = ()
-    # pylint: disable=W0603
-    global IDCOLUMN
-    IDCOLUMN = 0
-    query_string = 'id='+str(query) if query else request.query_string
-    order = ''
-    if query_string:
-        if not isinstance(query_string, str):
-            query_string = query_string.decode('utf-8')
-        ipd = parse_qs(query_string)
-        separator = ' AND' if ' WHERE ' in sql else ' WHERE'
-        for key, val in ipd.items():
-            if key == '_sort':
-                order = ' ORDER BY ' + val[0]
-            elif key == '_columns':
-                sql = sql.replace('*', val[0])
-                varr = val[0].split(',')
-                if 'id' in varr:
-                    IDCOLUMN = 1
-            elif key == '_distinct':
-                if 'DISTINCT' not in sql:
-                    sql = sql.replace('SELECT', 'SELECT DISTINCT')
-            else:
-                sql, bind = add_key_value_pair(key, val, separator, sql, bind)
-                separator = ' AND'
-    sql += order
-    if bind:
-        result['rest']['sql_statement'] = sql % bind
-    else:
-        result['rest']['sql_statement'] = sql
-    return sql, bind
-
-
 def execute_sql(result, sql, container, query=False):
     ''' Build and execute a SQL statement.
         Keyword arguments:
@@ -280,7 +206,9 @@ def execute_sql(result, sql, container, query=False):
           container: name of dictionary in result disctionary to return rows
           query: uses "id" column if true
     '''
-    sql, bind = generate_sql(result, sql, query)
+    # pylint: disable=W0603
+    global IDCOLUMN
+    sql, bind, IDCOLUMN = generate_sql(request, result, sql, query)
     if app.config['DEBUG']: # pragma: no cover
         if bind:
             print(sql % bind)
@@ -1754,6 +1682,12 @@ def process_project(protocol):
         required: false
         description: neuron "pre" filter
       - in: query
+        name: roi
+        schema:
+          type: string
+        required: false
+        description: neuron ROI filter
+      - in: query
         name: size
         schema:
           type: string
@@ -2312,9 +2246,13 @@ def new_tasks_for_project(protocol, project_name):
     Given a JSON payload containing specifics, generate new tasks for a
     new or existing project and return the task IDs.
     Parameters may be passed in as JSON.
+    The "tasks" structure is a dictionary keyed by key text. Each key text will
+    have a dictionary as a value. This [possibly empty] dictionary will
+    contain task properties for the task. Allowable task properties are determined
+    by the project protocol (task_insert_props).
     ---
     tags:
-      - Assignment
+      - Task
     parameters:
       - in: path
         name: protocol
@@ -2328,11 +2266,47 @@ def new_tasks_for_project(protocol, project_name):
           type: string
         required: true
         description: project name (or ID)
+      - in: query
+        name: tasks
+        schema:
+          type: string
+        required: true
+        description: a dictionary of tasks (identified by keys such as body IDs)
+      - in: query
+        name: note
+        schema:
+          type: string
+        required: false
+        description: project note
+      - in: query
+        name: post
+        schema:
+          type: string
+        required: false
+        description: project neuron "post" value (informational only)
+      - in: query
+        name: pre
+        schema:
+          type: string
+        required: false
+        description: project neuron "pre" value (informational only)
+      - in: query
+        name: roi
+        schema:
+          type: string
+        required: false
+        description: project neuron ROI value (informational only)
+      - in: query
+        name: size
+        schema:
+          type: string
+        required: false
+        description: project neuron "size" value (informational only)
     responses:
       200:
-          description: Assignment generated
+          description: Project/tasks generated
       404:
-          description: Assignment not generated
+          description: Project/tasks not generated
     '''
     result = initialize_result()
     # Get payload
