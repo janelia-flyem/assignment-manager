@@ -29,6 +29,7 @@ from assignment_utilities import (InvalidUsage, call_responder, generate_sql,
 # pylint: disable=W0611
 from orphan_link import Orphan_link
 from cleave import Cleave
+from todo import Todo
 from tasks import create_tasks_from_json, generate_tasks
 
 # SQL statements
@@ -79,7 +80,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.2.2'
+__version__ = '0.2.3'
 app = Flask(__name__)
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -497,6 +498,7 @@ def get_project_by_name_or_id(proj):
         Keyword arguments:
           proj: project name or ID
     '''
+    proj = str(proj)
     stmt = "SELECT * FROM project_vw WHERE id=%s" if proj.isdigit() \
            else "SELECT * FROM project_vw WHERE name=%s"
     try:
@@ -582,7 +584,7 @@ def generate_assignment(ipd, result):
             result['rest']['row_count'] += g.c.rowcount
             updated += 1
             publish_cdc(result, {"table": "assignment", "operation": "update"})
-            bind = (project['id'], result['rest']['inserted_id'], task['key_type_id'],
+            bind = (project['id'], result['rest']['inserted_id'], projectins.unit,
                     task['key_text'], 'Assigned', ipd['user'])
             g.c.execute(WRITE['TASK_AUDIT'], bind)
             if updated >= num_tasks:
@@ -659,15 +661,19 @@ def start_task(ipd, result):
     task = get_task_by_id(ipd['id'])
     if not task:
         raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
+    project = get_project_by_name_or_id(task['project_id'])
+    constructor = globals()[project['protocol'].capitalize()]
+    projectins = constructor()
     if task['start_date']:
         raise InvalidUsage("Task %s was already started" % ipd['id'], 400)
-    if not task['assignment_id']:
-        raise InvalidUsage("Task %s is not assigned" % ipd['id'], 400)
-    # Check the asignment
-    assignment = get_assignment_by_id(task['assignment_id'])
-    if not assignment['start_date']:
-        raise InvalidUsage("Assignment %s (associated with task %s) has not been started" \
-                           % (task['assignment_id'], ipd['id']), 400)
+    if not hasattr(projectins, 'no_assignment'):
+        if not task['assignment_id']:
+            raise InvalidUsage("Task %s is not assigned" % ipd['id'], 400)
+        # Check the asignment
+        assignment = get_assignment_by_id(task['assignment_id'])
+        if not assignment['start_date']:
+            raise InvalidUsage("Assignment %s (associated with task %s) has not been started" \
+                               % (task['assignment_id'], ipd['id']), 400)
     # Update the task
     try:
         stmt = "UPDATE task SET start_date=NOW(),disposition='In progress' " \
@@ -677,14 +683,11 @@ def start_task(ipd, result):
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
         publish_cdc(result, {"table": "task", "operation": "update"})
-        bind = (task['project_id'], assignment['id'], task['key_type_id'], task['key_text'],
+        bind = (task['project_id'], task['assignment_id'], task['key_type'], task['key_text'],
                 'In progress', task['user'])
         g.c.execute(WRITE['TASK_AUDIT'], bind)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    assignment = get_assignment_by_id(task['assignment_id'])
-    constructor = globals()[assignment['protocol'].capitalize()]
-    projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
             update_property(ipd['id'], 'task', parm, ipd[parm])
@@ -701,6 +704,9 @@ def complete_task(ipd, result):
     task = get_task_by_id(ipd['id'])
     if not task:
         raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
+    project = get_project_by_name_or_id(task['project_id'])
+    constructor = globals()[project['protocol'].capitalize()]
+    projectins = constructor()
     if not task['start_date']:
         raise InvalidUsage("Task %s was not started" % ipd['id'], 400)
     if task['completion_date']:
@@ -726,12 +732,9 @@ def complete_task(ipd, result):
         publish_cdc(result, {"table": "task", "operation": "update"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    assignment = get_assignment_by_id(task['assignment_id'])
-    bind = (task['project_id'], assignment['id'], task['key_type_id'], task['key_text'],
+    bind = (task['project_id'], task['assignment_id'], task['key_type'], task['key_text'],
             disposition, task['user'])
     g.c.execute(WRITE['TASK_AUDIT'], bind)
-    constructor = globals()[assignment['protocol'].capitalize()]
-    projectins = constructor()
     for parm in projectins.optional_properties:
         if parm in ipd:
             update_property(ipd['id'], 'task', parm, ipd[parm])
@@ -2061,7 +2064,7 @@ def delete_assignment(assignment_id):
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
         for task in tasks:
-            bind = (task['project_id'], assignment_id, task['key_type_id'], task['key_text'],
+            bind = (task['project_id'], assignment_id, task['key_type'], task['key_text'],
                     'Unassigned', task['user'])
             g.c.execute(WRITE['TASK_AUDIT'], bind)
         g.c.execute("DELETE from assignment WHERE id=%s", (assignment_id))
@@ -2322,6 +2325,10 @@ def new_tasks_for_project(protocol, project_name):
         project['id'] = result['rest']['inserted_id']
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
+    if hasattr(projectins, 'validate_tasks'):
+        error = projectins.validate_tasks(ipd['tasks'])
+        if error:
+            raise InvalidUsage(error, 400)
     # Add project properties from input parameters
     for parm in projectins.optional_properties:
         if parm in ipd:

@@ -137,17 +137,17 @@ def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, result)
     try:
         g.c.execute("SELECT id,key_text FROM task WHERE project_id=%s", (project_id))
         existing = g.c.fetchall()
-        for etask in existing:
-            key = etask['key_text']
-            result['tasks'].update({key: {"id": etask['id']}})
-            # Task properties
-            for parm in task_insert_props:
-                if parm in ipd['tasks'][key]:
-                    bind = (etask['id'], parm, ipd['tasks'][key][parm], ipd['tasks'][key][parm])
-                    insert_list.append(bind)
-                    result['tasks'][key][parm] = ipd['tasks'][key][parm]
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
+    for etask in existing:
+        key = etask['key_text']
+        result['tasks'].update({key: {"id": etask['id']}})
+        # Task properties
+        for parm in task_insert_props:
+            if parm in ipd['tasks'][key]:
+                bind = (etask['id'], parm, ipd['tasks'][key][parm], ipd['tasks'][key][parm])
+                insert_list.append(bind)
+                result['tasks'][key][parm] = ipd['tasks'][key][parm]
     if insert_list:
         print("Task properties to insert: %s" % len(insert_list))
         try:

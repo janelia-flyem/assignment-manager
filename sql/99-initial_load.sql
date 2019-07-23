@@ -29,7 +29,7 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('protocol',''),1,'synapse_review_coordinate','Synapse review (coordinate)','Synapse review (coordinate) - NeuPrint');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('protocol',''),1,'synapse_review_roi','Synapse review (ROI)','Synapse review (ROI) - [precomputed]');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('protocol',''),1,'tip_detection','Tip detection','Tip detection - DVID');
-INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('protocol',''),1,'to_do','To do','To do - DVID');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('protocol',''),1,'todo','To do','To do - DVID');
 
 INSERT INTO cv (version,is_current,name,display_name,definition) VALUES (1,1,'key','Key','Key');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('key',''),1,'body_id','Body ID','Body ID');
@@ -53,4 +53,6 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'pre','Presynaptic','Presynaptic');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'status','Status','Status');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'note','Note','Task note');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'todo_type','Todo type','Todo type');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'priority','Priority','Priority');
 SET FOREIGN_KEY_CHECKS=1;
