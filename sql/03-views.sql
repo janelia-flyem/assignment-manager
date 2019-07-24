@@ -203,6 +203,61 @@ JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
 LEFT OUTER JOIN task_property_vw tp ON (tp.task_id=t.id AND tp.type='note')
 ;
 
+CREATE OR REPLACE VIEW cleave_task_vw AS
+SELECT 
+    t.id               AS id,
+    t.name             AS name,
+    p.name             AS project,
+    t.project_id       AS project_id,
+    a.name             AS assignment,
+    t.assignment_id    AS assignment_id,
+    ktype.name         AS key_type,
+    t.key_text         AS key_text,
+    tp.value           AS note,
+    t.disposition      AS disposition,
+    t.user             AS user,
+    t.start_date       AS start_date,
+    t.completion_date  AS completion_date,
+    t.duration         AS duration,
+    t.working_duration AS working_duration,
+    t.create_date      AS create_date
+FROM task t
+JOIN project_vw p ON (p.id = t.project_id)
+LEFT OUTER JOIN assignment a ON (a.id = t.assignment_id)
+JOIN cv_term ktype ON (t.key_type_id = ktype.id)
+JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
+LEFT OUTER JOIN task_property_vw tp ON (tp.task_id=t.id AND tp.type='note')
+WHERE p.protocol='cleave'
+;
+
+CREATE OR REPLACE VIEW todo_task_vw AS
+SELECT 
+    t.id               AS id,
+    t.name             AS name,
+    p.name             AS project,
+    t.project_id       AS project_id,
+    ktype.name         AS key_type,
+    t.key_text         AS key_text,
+    tp2.value          AS todo_type,
+    tp3.value          AS priority,
+    tp.value           AS note,
+    t.disposition      AS disposition,
+    t.user             AS user,
+    t.start_date       AS start_date,
+    t.completion_date  AS completion_date,
+    t.duration         AS duration,
+    t.working_duration AS working_duration,
+    t.create_date      AS create_date
+FROM task t
+JOIN project_vw p ON (p.id = t.project_id)
+JOIN cv_term ktype ON (t.key_type_id = ktype.id)
+JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
+LEFT OUTER JOIN task_property_vw tp ON (tp.task_id=t.id AND tp.type='note')
+LEFT OUTER JOIN task_property_vw tp2 ON (tp2.task_id=t.id AND tp2.type='todo_type')
+LEFT OUTER JOIN task_property_vw tp3 ON (tp3.task_id=t.id AND tp3.type='priority')
+WHERE p.protocol='todo'
+;
+
 CREATE OR REPLACE VIEW task_audit_vw AS
 SELECT 
     t.id               AS id,
