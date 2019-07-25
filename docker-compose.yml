@@ -16,6 +16,19 @@ services:
     restart: always
     networks:
           - $MYSQL_DATABASE-net
+  app:
+    image: registry.int.janelia.org/flyem/assignment-manager
+    restart: unless-stopped
+    volumes:
+        - static_volume:/api/static
+    networks:
+        - assignment-net
+    ports:
+      - 80:8000
+
 networks:
   assignment-net:
       driver: bridge
+
+volumes:
+  static_volume:
