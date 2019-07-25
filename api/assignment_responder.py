@@ -40,6 +40,12 @@ READ = {
     'CVTERMREL': "SELECT subject,relationship,object FROM "
                  + "cv_term_relationship_vw WHERE subject_id=%s OR "
                  + "object_id=%s",
+    'ELIGIBLE_CLEAVE': "SELECT * from cleave_task_vw WHERE assignment_id IS NOT NULL "
+                       + "AND start_date IS NULL ORDER BY project,create_date",
+    'ELIGIBLE_ORPHAN_LINK': "SELECT * from orphan_link_task_vw WHERE assignment_id IS NOT NULL "
+                       + "AND start_date IS NULL ORDER BY project,create_date",
+    'ELIGIBLE_TODO': "SELECT * FROM todo_task_vw WHERE start_date IS NULL ORDER BY "
+                     + "FIELD(priority,'high','medium','low'),todo_type",
     'GET_ASSOCIATION': "SELECT object FROM cv_term_relationship_vw WHERE "
                        + "subject=%s AND relationship='associated_with'",
     'PROJECT': "SELECT * FROM project_vw WHERE name=%s",
@@ -517,6 +523,7 @@ def get_unassigned_project_tasks(ipd, project_id, num_tasks):
           num_tasks: number of tasks to assign
     '''
     try:
+        print(READ['UNASSIGNED_TASKS'] % (project_id))
         g.c.execute(READ['UNASSIGNED_TASKS'], (project_id))
         tasks = g.c.fetchall()
     except Exception as err:
@@ -525,7 +532,7 @@ def get_unassigned_project_tasks(ipd, project_id, num_tasks):
         raise InvalidUsage("Project %s has no unassigned tasks" % ipd['project_name'], 404)
     if len(tasks) < num_tasks:
         raise InvalidUsage(("Project %s only has %s unassigned tasks, not %s" \
-                            % (ipd['project_name'], len(tasks), ipd['tasks'])), 404)
+                            % (ipd['project_name'], len(tasks), num_tasks)), 404)
     return tasks
 
 
@@ -676,9 +683,9 @@ def start_task(ipd, result):
                                % (task['assignment_id'], ipd['id']), 400)
     # Update the task
     try:
-        stmt = "UPDATE task SET start_date=NOW(),disposition='In progress' " \
-               + "WHERE id=%s AND start_date IS NULL"
-        bind = (ipd['id'],)
+        stmt = "UPDATE task SET start_date=NOW(),disposition='In progress'," \
+               + "user=%s WHERE id=%s AND start_date IS NULL"
+        bind = (result['rest']['user'], ipd['id'],)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
@@ -2338,6 +2345,37 @@ def new_tasks_for_project(protocol, project_name):
     create_tasks_from_json(ipd, project['id'], projectins.unit,
                            projectins.task_insert_props, result)
     g.db.commit()
+    return generate_response(result)
+
+
+@app.route('/eligible_tasks/<string:protocol>', methods=['GET'])
+def get_eligible_tasks(protocol):
+    '''
+    Get eligible tasks for a protocol
+    Given a protocol, return a list of eligible (not started) tasks.
+    Specific columns from the table can be returned with the _columns key.
+    Multiple columns should be separated by a comma.
+    ---
+    tags:
+      - Task
+    parameters:
+      - in: path
+        name: task_id
+        schema:
+          type: string
+        required: true
+        description: task ID
+    responses:
+      200:
+          description: Information for one task
+      404:
+          description: Task ID not found
+    '''
+    result = initialize_result()
+    sql = 'ELIGIBLE_' + protocol.upper()
+    if not sql in READ:
+        raise InvalidUsage("No SQL statement defined for protocol %s" % (protocol), 500)
+    execute_sql(result, READ[sql], 'data')
     return generate_response(result)
 
 
