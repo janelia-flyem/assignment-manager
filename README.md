@@ -28,7 +28,7 @@ Take the following steps to start the system:
 cd /opt/flask/assignment-responder
 docker-compose up
 docker build --tag assignment_manager_app .
-docker run --detach -p 80:8000 assignment_manager_app
+docker run --detach -p 80:8000 assignment_manager
 ```
 
 ## Development
