@@ -18,6 +18,12 @@ will use the following configurations:
 
 The location of the configuration system is in the config.cfg file as CONFIG.
 
+To rebuild the docker container:
+```
+docker build --tag registry.int.janelia.org/flyem/assignment-manager .
+docker push registry.int.janelia.org/flyem/assignment-manager
+```
+
 ## Deployment
 
 After installing on the production server, set up the environment for Docker.
@@ -27,7 +33,6 @@ Take the following steps to start the system:
 ```
 cd /opt/flask/assignment-responder
 docker-compose up -d
-docker build --tag registry.int.janelia.org/flyem/assignment-manager .
 docker run --detach -p 80:8000 registry.int.janelia.org/flyem/assignment-manager
 ```
 
