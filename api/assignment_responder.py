@@ -43,7 +43,7 @@ READ = {
     'ELIGIBLE_CLEAVE': "SELECT * from cleave_task_vw WHERE assignment_id IS NOT NULL "
                        + "AND start_date IS NULL ORDER BY project,create_date",
     'ELIGIBLE_ORPHAN_LINK': "SELECT * from orphan_link_task_vw WHERE assignment_id IS NOT NULL "
-                       + "AND start_date IS NULL ORDER BY project,create_date",
+                            + "AND start_date IS NULL ORDER BY project,create_date",
     'ELIGIBLE_TODO': "SELECT * FROM todo_task_vw WHERE start_date IS NULL ORDER BY "
                      + "FIELD(priority,'high','medium','low'),todo_type",
     'GET_ASSOCIATION': "SELECT object FROM cv_term_relationship_vw WHERE "
