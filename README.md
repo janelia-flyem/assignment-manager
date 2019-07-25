@@ -26,7 +26,7 @@ Rename env_template to .env, and change any calues enclosed in angle brackets.
 Take the following steps to start the system:
 ```
 cd /opt/flask/assignment-responder
-docker-compose up
+docker-compose up -d
 docker build --tag registry.int.janelia.org/flyem/assignment-manager .
 docker run --detach -p 80:8000 registry.int.janelia.org/flyem/assignment-manager
 ```
