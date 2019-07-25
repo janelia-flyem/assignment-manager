@@ -127,6 +127,19 @@ def get_assignment_by_id(aid):
     return assignment
 
 
+def get_tasks_by_assignment_id(aid):
+    ''' Get tasks by assignment ID
+        Keyword arguments:
+          aid: assignment ID
+    '''
+    try:
+        g.c.execute("SELECT * FROM task_vw WHERE assignment_id=%s", (aid))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    return tasks
+
+
 def get_task_by_id(tid):
     ''' Get a task by ID
         Keyword arguments:

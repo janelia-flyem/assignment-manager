@@ -24,6 +24,7 @@ import requests
 import assignment_utilities
 from assignment_utilities import (InvalidUsage, call_responder, generate_sql,
                                   get_assignment_by_id, get_task_by_id,
+                                  get_tasks_by_assignment_id,
                                   sql_error, update_property, working_duration)
 
 # pylint: disable=W0611
@@ -56,6 +57,8 @@ READ = {
 }
 WRITE = {
     'ASSIGN_TASK': "UPDATE task SET assignment_id=%s,user=%s WHERE assignment_id IS NULL AND id=%s",
+    'COMPLETE_TASK': "UPDATE task SET completion_date=FROM_UNIXTIME(%s),disposition=%s,"
+                     + "duration=%s,working_duration=%s WHERE id=%s AND completion_date IS NULL",
     'DELETE_UNASSIGNED': "DELETE FROM task WHERE project_id=%s AND assignment_id IS NULL",
     'INSERT_ASSIGNMENT': "INSERT INTO assignment (name,project_id,user) VALUES(%s,"
                          + "%s,%s)",
@@ -66,6 +69,8 @@ WRITE = {
     'INSERT_CVTERM' : "INSERT INTO cv_term (cv_id,name,definition,display_name"
                       + ",is_current,data_type) VALUES (getCvId(%s,''),%s,%s,"
                       + "%s,%s,%s)",
+    'START_TASK': "UPDATE task SET start_date=NOW(),disposition=%s,user=%s WHERE id=%s "
+                  + "AND start_date IS NULL",
     'TASK_AUDIT': "INSERT INTO task_audit (project_id,assignment_id,key_type_id,key_text,"
                   + "disposition,user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s,%s)",
 }
@@ -682,13 +687,16 @@ def start_task(ipd, result):
             raise InvalidUsage("Assignment %s (associated with task %s) has not been started" \
                                % (task['assignment_id'], ipd['id']), 400)
     # Update the task
+    disposition = 'In progress'
+    if 'disposition' in ipd:
+        disposition = ipd['disposition']
+        if not valid_cv_term('disposition', disposition):
+            raise InvalidUsage("%s in not a valid disposition" % disposition, 400)
     try:
-        stmt = "UPDATE task SET start_date=NOW(),disposition='In progress'," \
-               + "user=%s WHERE id=%s AND start_date IS NULL"
-        bind = (result['rest']['user'], ipd['id'],)
-        g.c.execute(stmt, bind)
+        bind = (disposition, result['rest']['user'], ipd['id'],)
+        g.c.execute(WRITE['START_TASK'], bind)
         result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
+        result['rest']['sql_statement'] = g.c.mogrify(WRITE['START_TASK'], bind)
         publish_cdc(result, {"table": "task", "operation": "update"})
         bind = (task['project_id'], task['assignment_id'], task['key_type'], task['key_text'],
                 'In progress', task['user'])
@@ -730,12 +738,10 @@ def complete_task(ipd, result):
         if not valid_cv_term('disposition', disposition):
             raise InvalidUsage("%s in not a valid disposition" % disposition, 400)
     try:
-        stmt = "UPDATE task SET completion_date=FROM_UNIXTIME(%s),disposition=%s," \
-               + "duration=%s,working_duration=%s WHERE id=%s AND completion_date IS NULL"
         bind = (end_time, disposition, duration, working, ipd['id'],)
-        g.c.execute(stmt, bind)
+        g.c.execute(WRITE['COMPLETE_TASK'], bind)
         result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
+        result['rest']['sql_statement'] = g.c.mogrify(WRITE['COMPLETE_TASK'], bind)
         publish_cdc(result, {"table": "task", "operation": "update"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
@@ -1816,6 +1822,47 @@ def get_assignment_info():
     return generate_response(result)
 
 
+@app.route('/assignmentstats/<string:assignment_id>', methods=['GET'])
+def get_assignment_stats(assignment_id):
+    '''
+    Get assignment information for a given ID
+    Given an ID, return a row from the assignment_vw table. Specific columns
+    from the assignment_vw table can be returned with the _columns key.
+    Multiple columns should be separated by a comma.
+    ---
+    tags:
+      - Assignment
+    parameters:
+      - in: path
+        name: assignment_id
+        schema:
+          type: string
+        required: true
+        description: assignment ID
+    responses:
+      200:
+          description: Information for one assignment
+      404:
+          description: Assignment ID not found
+    '''
+    result = initialize_result()
+    tasks = get_tasks_by_assignment_id(assignment_id)
+    result['data'] = dict()
+    result['data']['total'] = len(tasks)
+    complete = eligible = started = 0
+    for task in tasks:
+        if task['start_date'] is None:
+            eligible += 1
+        elif task['completion_date']:
+            complete += 1
+        else:
+            started += 1
+    result['data']['eligible'] = eligible
+    result['data']['started'] = started
+    result['data']['complete'] = complete
+    return generate_response(result)
+
+
 @app.route('/assignments_completed', methods=['GET'])
 def get_assignment_completed_info():
     '''
@@ -2056,11 +2103,7 @@ def delete_assignment(assignment_id):
     assignment = get_assignment_by_id(assignment_id)
     if not assignment:
         raise InvalidUsage("Assignment %s was not found" % assignment_id, 404)
-    try:
-        g.c.execute("SELECT * FROM task_vw WHERE assignment_id=%s", (assignment_id))
-        tasks = g.c.fetchall()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
+    tasks = get_tasks_by_assignment_id(assignment_id)
     for task in tasks:
         if task['start_date']:
             raise InvalidUsage("Assignment %s has one or more started tasks" % assignment_id, 400)
