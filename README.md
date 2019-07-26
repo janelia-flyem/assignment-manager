@@ -37,23 +37,8 @@ docker run --detach -p 80:8000 registry.int.janelia.org/flyem/assignment-manager
 ```
 
 ## Development
-1. Create and activate a clean Python 3 environment:
-    ```
-    python3 -m venv myenv
-    source myenv/bin/activate
-    ```
-1. Install dependencies:
-
-    `pip3 install -r requirements.txt`
-1. Run tests:
-
-    `python3 test_base.py`
-1. Start server:
-
-    `python3 mad_responder.py`
-1. When you're done, deactivate the virtual environment:
-
-    `deactivate`
+1. Modify api/config.cfg to change MYSQL_DATABASE_HOST
+2. Rebuild the Docker container
 
 ## Author Information
 Written by Rob Svirskas (<svirskasr@janelia.hhmi.org>)
