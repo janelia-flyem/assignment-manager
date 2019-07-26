@@ -20,6 +20,7 @@ services:
     image: registry.int.janelia.org/flyem/assignment-manager
     restart: unless-stopped
     volumes:
+        - ./api:/api
         - static_volume:/api/static
     networks:
         - assignment-net
