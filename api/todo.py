@@ -8,7 +8,7 @@ class Todo:
         self.task_populate_method = None
         self.unit = 'xyz'
         self.optional_properties = ['note']
-        self.no_assignment = False
+        # self.no_assignment = True
         self.allowable_todo_types = ['diagnostic', 'irrelevant', 'merge', 'no_soma', 'split', 'svsplit', 'trace_to_soma']
         self.required_task_props = ['priority', 'todo_type']
         self.task_insert_props = ['priority', 'todo_type']
