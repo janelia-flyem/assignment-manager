@@ -22,6 +22,8 @@ services:
     volumes:
         - ./api:/api
         - static_volume:/api/static
+    environment:
+      - PYTHONUNBUFFERED=1
     networks:
         - assignment-net
     ports:
