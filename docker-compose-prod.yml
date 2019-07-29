@@ -19,6 +19,7 @@ services:
     command: --default-authentication-plugin=mysql_native_password
     ports:
       - "$MYSQL_PORT:3306"
+    user: "8010:8009"
     volumes:
       - $DATA_DIR/$MYSQL_DATABASE:/var/lib/mysql
       - ./conf:/etc/mysql/conf.d
