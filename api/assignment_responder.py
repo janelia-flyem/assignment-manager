@@ -91,7 +91,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.2.3'
+__version__ = '0.2.4'
 app = Flask(__name__)
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -193,7 +193,8 @@ def initialize_result():
                        'endpoint': request.endpoint,
                        'error': False,
                        'elapsed_time': '',
-                       'row_count': 0}}
+                       'row_count': 0,
+                       'pid': os.getpid()}}
     if 'Authorization' in  request.headers:
         token = re.sub(r'Bearer\s+', '', request.headers['Authorization'])
         dtok = dict()
@@ -652,6 +653,44 @@ def start_assignment(ipd, result):
     publish_kafka('assignment_start', result, message)
 
 
+def complete_assignment(ipd, result, assignment):
+    ''' Start a task.
+        Keyword arguments:
+          ipd: request payload
+          result: result dictionary
+          assignment: assignment record
+    '''
+    get_incomplete_assignment_tasks(assignment['id'])
+    start_time = int(assignment['start_date'].timestamp())
+    end_time = int(time())
+    duration = end_time - start_time
+    working = working_duration(start_time, end_time)
+    stmt = "UPDATE assignment SET completion_date=FROM_UNIXTIME(%s),disposition='Complete'," \
+           + "duration=%s,working_duration=%s WHERE id=%s AND completion_date IS NULL"
+    try:
+        bind = (end_time, duration, working, assignment['id'],)
+        g.c.execute(stmt, bind)
+        result['rest']['row_count'] = g.c.rowcount
+        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
+        publish_cdc(result, {"table": "assignment", "operation": "update"})
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if result['rest']['row_count'] == 0:
+        raise InvalidUsage("Assignment %s was not updated" % (assignment['id']), 400)
+    constructor = globals()[assignment['protocol'].capitalize()]
+    projectins = constructor()
+    for parm in projectins.optional_properties:
+        if parm in ipd:
+            update_property(assignment['id'], 'assignment', parm, ipd[parm])
+            result['rest']['row_count'] += g.c.rowcount
+    g.db.commit()
+    message = {"mad_id": assignment['id'], "user": assignment['user'],
+               "start_time": start_time, "end_time": end_time,
+               "duration": end_time - start_time, "working_duration": working,
+               "type": assignment['protocol']}
+    publish_kafka('assignment_complete', result, message)
+
+
 def get_task_by_key(pid, key_type, key):
     ''' Get a task by project ID/key type/key
         Keyword arguments:
@@ -753,6 +792,11 @@ def complete_task(ipd, result):
             update_property(ipd['id'], 'task', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     g.db.commit()
+    if 'complete_assignment' in ipd:
+        if ipd['complete_assignment']:
+            assignment = get_assignment_by_id(task['assignment_id'])
+            complete_assignment(ipd, result, assignment)
+            g.db.commit()
 
 
 def publish_kafka(topic, result, message):
@@ -2155,6 +2199,7 @@ def start_assignment_by_id(assignment_id): # pragma: no cover
     ipd = receive_payload(result)
     ipd['id'] = assignment_id
     start_assignment(ipd, result)
+    g.db.commit()
     return generate_response(result)
 
 
@@ -2194,35 +2239,8 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
         raise InvalidUsage("Assignment %s was not started" % ipd['id'], 400)
     if assignment['completion_date']:
         raise InvalidUsage("Assignment %s was already completed" % ipd['id'], 400)
-    get_incomplete_assignment_tasks(assignment_id)
-    start_time = int(assignment['start_date'].timestamp())
-    end_time = int(time())
-    duration = end_time - start_time
-    working = working_duration(start_time, end_time)
-    stmt = "UPDATE assignment SET completion_date=FROM_UNIXTIME(%s),disposition='Complete'," \
-           + "duration=%s,working_duration=%s WHERE id=%s AND completion_date IS NULL"
-    try:
-        bind = (end_time, duration, working, ipd['id'],)
-        g.c.execute(stmt, bind)
-        result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
-        publish_cdc(result, {"table": "assignment", "operation": "update"})
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    if result['rest']['row_count'] == 0:
-        raise InvalidUsage("Assignment %s was not updated" % (ipd['id']), 400)
-    constructor = globals()[assignment['protocol'].capitalize()]
-    projectins = constructor()
-    for parm in projectins.optional_properties:
-        if parm in ipd:
-            update_property(ipd['id'], 'assignment', parm, ipd[parm])
-            result['rest']['row_count'] += g.c.rowcount
+    complete_assignment(ipd, result, assignment)
     g.db.commit()
-    message = {"mad_id": assignment['id'], "user": assignment['user'],
-               "start_time": start_time, "end_time": end_time,
-               "duration": end_time - start_time, "working_duration": working,
-               "type": assignment['protocol']}
-    publish_kafka('assignment_complete', result, message)
     return generate_response(result)
 
 
@@ -2573,6 +2591,12 @@ def complete_task_by_id(task_id): # pragma: no cover
           type: string
         required: false
         description: note
+      - in: query
+        name: complete_assignment
+        schema:
+          type: string
+        required: false
+        description: if a non-zero value the assignment will be completed if this was the last task
     responses:
       200:
           description: Task completed
