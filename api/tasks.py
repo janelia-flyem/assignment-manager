@@ -160,7 +160,6 @@ def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, result)
     for key in result['tasks']:
         bind = (project_id, None, key_type,
                 key, 'Inserted', result['rest']['user'])
-        print(bind)
         insert_list.append(bind)
     if insert_list:
         try:
