@@ -27,6 +27,7 @@ services:
     environment:
       - MYSQL_DATABASE=$MYSQL_DATABASE
       - MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
+      - TZ=$TZ
     restart: unless-stopped
     networks:
           - assignment-net
@@ -38,7 +39,7 @@ services:
     volumes:
         - static_volume:/api/static
     environment:
-      - TZ=America/New_York
+      - TZ=$TZ
       - PYTHONUNBUFFERED=1
     networks:
         - assignment-net
