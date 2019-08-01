@@ -91,7 +91,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.2.4'
+__version__ = '0.2.5'
 app = Flask(__name__)
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -111,6 +111,7 @@ except Exception as err:
     sys.exit(-1)
 app.config['STARTTIME'] = time()
 app.config['STARTDT'] = datetime.now()
+app.config['LAST_TRANSACTION'] = time()
 IDCOLUMN = 0
 START_TIME = ESEARCH = PRODUCER = ''
 
@@ -703,6 +704,26 @@ def get_task_by_key(pid, key_type, key):
     return g.c.fetchone()
 
 
+def add_point(ipd, key, result):
+    ''' Add a point to a started task.
+        Keyword arguments:
+          ipd: request payload
+          result: result dictionary
+    '''
+    payload = {"cypher" : "MATCH (n :`hemibrain-Neuron` {bodyId: "
+                          + str(key) + "})-[:Contains]->(ss :SynapseSet)-[:Contains]->(s :Synapse) "
+                          + "RETURN s.location LIMIT 1"}
+    result['rest']['cypher'] = payload['cypher']
+    try:
+        response = call_responder('neuprint', 'custom/custom', payload)
+    except Exception as err:
+        raise err
+    if 'data' in response:
+        point = json.dumps(response['data'][0][0]['coordinates'])
+        update_property(ipd['id'], 'task', 'coordinates', point)
+        result['rest']['row_count'] += g.c.rowcount
+
+
 def start_task(ipd, result):
     ''' Start a task.
         Keyword arguments:
@@ -742,10 +763,14 @@ def start_task(ipd, result):
         g.c.execute(WRITE['TASK_AUDIT'], bind)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
+    # Add optional properties
     for parm in projectins.optional_properties:
         if parm in ipd:
             update_property(ipd['id'], 'task', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
+    if projectins.unit == 'body_id':
+        # Add a point
+        add_point(ipd, task['key_text'], result)
     g.db.commit()
 
 
@@ -797,6 +822,24 @@ def complete_task(ipd, result):
             assignment = get_assignment_by_id(task['assignment_id'])
             complete_assignment(ipd, result, assignment)
             g.db.commit()
+
+
+def get_task_properties(result):
+    ''' Add task properties to tasks
+        Keyword arguments:
+          result: result dictionary
+    '''
+    result['data'] = list()
+    for task in result['temp']:
+        task['properties'] = dict()
+        try:
+            g.c.execute("SELECT type,value FROM task_property_vw WHERE task_id=%s", task['id'])
+            rows = g.c.fetchall()
+            for row in rows:
+                task['properties'][row['type']] = row['value']
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+        result['data'].append(task)
 
 
 def publish_kafka(topic, result, message):
@@ -956,7 +999,7 @@ def get_processlist_columns():
     '''
     Get columns from the system processlist table
     Show the columns in the system processlist table, which may be used to
-    filter results for the /processlist endpoints.
+     filter results for the /processlist endpoints.
     ---
     tags:
       - Diagnostics
@@ -974,13 +1017,13 @@ def get_processlist_info():
     '''
     Get processlist information (with filtering)
     Return a list of processlist entries (rows from the system processlist
-    table). The caller can filter on any of the columns in the system
-    processlist table. Inequalities (!=) and some relational operations
-    (&lt;= and &gt;=) are supported. Wildcards are supported (use "*").
-    Specific columns from the system processlist table can be returned with
-    the _columns key. The returned list may be ordered by specifying a column
-    with the _sort key. In both cases, multiple columns would be separated
-    by a comma.
+     table). The caller can filter on any of the columns in the system
+     processlist table. Inequalities (!=) and some relational operations
+     (&lt;= and &gt;=) are supported. Wildcards are supported (use "*").
+     Specific columns from the system processlist table can be returned with
+     the _columns key. The returned list may be ordered by specifying a column
+     with the _sort key. In both cases, multiple columns would be separated
+     by a comma.
     ---
     tags:
       - Diagnostics
@@ -1002,7 +1045,7 @@ def get_processlist_host_info(): # pragma: no cover
     '''
     Get processlist information for this host
     Return a list of processlist entries (rows from the system processlist
-    table) for this host.
+     table) for this host.
     ---
     tags:
       - Diagnostics
@@ -1090,7 +1133,7 @@ def get_cv_columns():
     '''
     Get columns from cv table
     Show the columns in the cv table, which may be used to filter results for
-    the /cvs and /cv_ids endpoints.
+     the /cvs and /cv_ids endpoints.
     ---
     tags:
       - CV
@@ -1108,10 +1151,10 @@ def get_cv_ids():
     '''
     Get CV IDs (with filtering)
     Return a list of CV IDs. The caller can filter on any of the columns in the
-    cv table. Inequalities (!=) and some relational operations (&lt;= and &gt;=)
-    are supported. Wildcards are supported (use "*"). The returned list may be
-    ordered by specifying a column with the _sort key. Multiple columns should
-    be separated by a comma.
+     cv table. Inequalities (!=) and some relational operations (&lt;= and &gt;=)
+     are supported. Wildcards are supported (use "*"). The returned list may be
+     ordered by specifying a column with the _sort key. Multiple columns should
+     be separated by a comma.
     ---
     tags:
       - CV
@@ -1135,8 +1178,8 @@ def get_cv_by_id(sid):
     '''
     Get CV information for a given ID
     Given an ID, return a row from the cv table. Specific columns from the cv
-    table can be returned with the _columns key. Multiple columns should be
-    separated by a comma.
+     table can be returned with the _columns key. Multiple columns should be
+     separated by a comma.
     ---
     tags:
       - CV
@@ -1165,12 +1208,12 @@ def get_cv_info():
     '''
     Get CV information (with filtering)
     Return a list of CVs (rows from the cv table). The caller can filter on
-    any of the columns in the cv table. Inequalities (!=) and some relational
-    operations (&lt;= and &gt;=) are supported. Wildcards are supported
-    (use "*"). Specific columns from the cv table can be returned with the
-    _columns key. The returned list may be ordered by specifying a column with
-    the _sort key. In both cases, multiple columns would be separated by a
-    comma.
+     any of the columns in the cv table. Inequalities (!=) and some relational
+     operations (&lt;= and &gt;=) are supported. Wildcards are supported
+     (use "*"). Specific columns from the cv table can be returned with the
+     _columns key. The returned list may be ordered by specifying a column with
+     the _sort key. In both cases, multiple columns would be separated by a
+     comma.
     ---
     tags:
       - CV
@@ -1260,7 +1303,7 @@ def get_cv_term_columns():
     '''
     Get columns from cv_term_vw table
     Show the columns in the cv_term_vw table, which may be used to filter
-    results for the /cvterms and /cvterm_ids endpoints.
+     results for the /cvterms and /cvterm_ids endpoints.
     ---
     tags:
       - CV
@@ -1278,10 +1321,10 @@ def get_cv_term_ids():
     '''
     Get CV term IDs (with filtering)
     Return a list of CV term IDs. The caller can filter on any of the columns
-    in the cv_term_vw table. Inequalities (!=) and some relational operations
-    (&lt;= and &gt;=) are supported. Wildcards are supported (use "*"). The
-    returned list may be ordered by specifying a column with the _sort key.
-    Multiple columns should be separated by a comma.
+     in the cv_term_vw table. Inequalities (!=) and some relational operations
+     (&lt;= and &gt;=) are supported. Wildcards are supported (use "*"). The
+     returned list may be ordered by specifying a column with the _sort key.
+     Multiple columns should be separated by a comma.
     ---
     tags:
       - CV
@@ -1305,8 +1348,8 @@ def get_cv_term_by_id(sid):
     '''
     Get CV term information for a given ID
     Given an ID, return a row from the cv_term_vw table. Specific columns from
-    the cv_term_vw table can be returned with the _columns key. Multiple columns
-    should be separated by a comma.
+     the cv_term_vw table can be returned with the _columns key. Multiple columns
+     should be separated by a comma.
     ---
     tags:
       - CV
@@ -1335,12 +1378,12 @@ def get_cv_term_info():
     '''
     Get CV term information (with filtering)
     Return a list of CV terms (rows from the cv_term_vw table). The caller can
-    filter on any of the columns in the cv_term_vw table. Inequalities (!=)
-    and some relational operations (&lt;= and &gt;=) are supported. Wildcards
-    are supported (use "*"). Specific columns from the cv_term_vw table can be
-    returned with the _columns key. The returned list may be ordered by
-    specifying a column with the _sort key. In both cases, multiple columns
-    would be separated by a comma.
+     filter on any of the columns in the cv_term_vw table. Inequalities (!=)
+     and some relational operations (&lt;= and &gt;=) are supported. Wildcards
+     are supported (use "*"). Specific columns from the cv_term_vw table can be
+     returned with the _columns key. The returned list may be ordered by
+     specifying a column with the _sort key. In both cases, multiple columns
+     would be separated by a comma.
     ---
     tags:
       - CV
@@ -1504,7 +1547,7 @@ def get_project_columns():
     '''
     Get columns from project_vw table
     Show the columns in the project_vw table, which may be used to filter
-    results for the /projects and /project_ids endpoints.
+     results for the /projects and /project_ids endpoints.
     ---
     tags:
       - Project
@@ -1522,10 +1565,10 @@ def get_project_ids():
     '''
     Get project IDs (with filtering)
     Return a list of project IDs. The caller can filter on any of the
-    columns in the project_vw table. Inequalities (!=) and some relational
-    operations (&lt;= and &gt;=) are supported. Wildcards are supported
-    (use "*"). The returned list may be ordered by specifying a column with
-    the _sort key. Multiple columns should be separated by a comma.
+     columns in the project_vw table. Inequalities (!=) and some relational
+     operations (&lt;= and &gt;=) are supported. Wildcards are supported
+     (use "*"). The returned list may be ordered by specifying a column with
+     the _sort key. Multiple columns should be separated by a comma.
     ---
     tags:
       - Project
@@ -1549,8 +1592,8 @@ def get_projects_by_id(project_id):
     '''
     Get project information for a given ID
     Given an ID, return a row from the project_vw table. Specific columns
-    from the project_vw table can be returned with the _columns key.
-    Multiple columns should be separated by a comma.
+     from the project_vw table can be returned with the _columns key.
+     Multiple columns should be separated by a comma.
     ---
     tags:
       - Project
@@ -1577,12 +1620,12 @@ def get_project_info():
     '''
     Get project information (with filtering)
     Return a list of projects (rows from the project_vw table). The
-    caller can filter on any of the columns in the project_vw table.
-    Inequalities (!=) and some relational operations (&lt;= and &gt;=) are
-    supported. Wildcards are supported (use "*"). Specific columns from the
-    project_vw table can be returned with the _columns key. The returned
-    list may be ordered by specifying a column with the _sort key. In both
-    cases, multiple columns would be separated by a comma.
+     caller can filter on any of the columns in the project_vw table.
+     Inequalities (!=) and some relational operations (&lt;= and &gt;=) are
+     supported. Wildcards are supported (use "*"). Specific columns from the
+     project_vw table can be returned with the _columns key. The returned
+     list may be ordered by specifying a column with the _sort key. In both
+     cases, multiple columns would be separated by a comma.
     ---
     tags:
       - Project
@@ -1602,7 +1645,7 @@ def get_projectprop_columns():
     '''
     Get columns from project_property_vw table
     Show the columns in the project_property_vw table, which may be used to
-    filter results for the /projectprops and /projectprop_ids endpoints.
+     filter results for the /projectprops and /projectprop_ids endpoints.
     ---
     tags:
       - Project
@@ -1620,11 +1663,11 @@ def get_projectprop_ids():
     '''
     Get project property IDs (with filtering)
     Return a list of project property IDs. The caller can filter on any of
-    the columns in the project_property_vw table. Inequalities (!=) and
-    some relational operations (&lt;= and &gt;=) are supported. Wildcards are
-    supported (use "*"). The returned list may be ordered by specifying a
-    column with the _sort key. Multiple columns should be separated by a
-    comma.
+     the columns in the project_property_vw table. Inequalities (!=) and
+     some relational operations (&lt;= and &gt;=) are supported. Wildcards are
+     supported (use "*"). The returned list may be ordered by specifying a
+     column with the _sort key. Multiple columns should be separated by a
+     comma.
     ---
     tags:
       - Project
@@ -1648,8 +1691,8 @@ def get_projectprops_by_id(pid):
     '''
     Get project property information for a given ID
     Given an ID, return a row from the project_property_vw table. Specific
-    columns from the project_property_vw table can be returned with the
-    _columns key. Multiple columns should be separated by a comma.
+     columns from the project_property_vw table can be returned with the
+     _columns key. Multiple columns should be separated by a comma.
     ---
     tags:
       - Project
@@ -1676,13 +1719,13 @@ def get_projectprop_info():
     '''
     Get project property information (with filtering)
     Return a list of project properties (rows from the
-    project_property_vw table). The caller can filter on any of the columns
-    in the project_property_vw table. Inequalities (!=) and some relational
-    operations (&lt;= and &gt;=) are supported. Wildcards are supported
-    (use "*"). Specific columns from the project_property_vw table can be
-    returned with the _columns key. The returned list may be ordered by
-    specifying a column with the _sort key. In both cases, multiple columns
-    would be separated by a comma.
+     project_property_vw table). The caller can filter on any of the columns
+     in the project_property_vw table. Inequalities (!=) and some relational
+     operations (&lt;= and &gt;=) are supported. Wildcards are supported
+     (use "*"). Specific columns from the project_property_vw table can be
+     returned with the _columns key. The returned list may be ordered by
+     specifying a column with the _sort key. In both cases, multiple columns
+     would be separated by a comma.
     ---
     tags:
       - Project
@@ -1703,10 +1746,10 @@ def process_project(protocol):
     '''
     Generate a new project
     Given a protocol and a JSON payload containing specifics, generate
-    a new project and return its ID and a list of tasks. A "project_name"
-    parameter is required. There are several optional parameters - check
-    the "protocols" endpoint to see which protocols support which parameters.
-    Parameters may be passed in as form-data or JSON.
+     a new project and return its ID and a list of tasks. A "project_name"
+     parameter is required. There are several optional parameters - check
+     the "protocols" endpoint to see which protocols support which parameters.
+     Parameters may be passed in as form-data or JSON.
     ---
     tags:
       - Project
@@ -1773,7 +1816,7 @@ def get_assignment_columns():
     '''
     Get columns from assignment_vw table
     Show the columns in the assignment_vw table, which may be used to filter
-    results for the /assignments and /assignment_ids endpoints.
+     results for the /assignments and /assignment_ids endpoints.
     ---
     tags:
       - Assignment
@@ -1791,10 +1834,10 @@ def get_assignment_ids():
     '''
     Get assignment IDs (with filtering)
     Return a list of assignment IDs. The caller can filter on any of the
-    columns in the assignment_vw table. Inequalities (!=) and some relational
-    operations (&lt;= and &gt;=) are supported. Wildcards are supported
-    (use "*"). The returned list may be ordered by specifying a column with
-    the _sort key. Multiple columns should be separated by a comma.
+     columns in the assignment_vw table. Inequalities (!=) and some relational
+     operations (&lt;= and &gt;=) are supported. Wildcards are supported
+     (use "*"). The returned list may be ordered by specifying a column with
+     the _sort key. Multiple columns should be separated by a comma.
     ---
     tags:
       - Assignment
@@ -1818,8 +1861,8 @@ def get_assignments_by_id(assignment_id):
     '''
     Get assignment information for a given ID
     Given an ID, return a row from the assignment_vw table. Specific columns
-    from the assignment_vw table can be returned with the _columns key.
-    Multiple columns should be separated by a comma.
+     from the assignment_vw table can be returned with the _columns key.
+     Multiple columns should be separated by a comma.
     ---
     tags:
       - Assignment
@@ -1846,12 +1889,12 @@ def get_assignment_info():
     '''
     Get assignment information (with filtering)
     Return a list of assignments (rows from the assignment_vw table). The
-    caller can filter on any of the columns in the assignment_vw table.
-    Inequalities (!=) and some relational operations (&lt;= and &gt;=) are
-    supported. Wildcards are supported (use "*"). Specific columns from the
-    assignment_vw table can be returned with the _columns key. The returned
-    list may be ordered by specifying a column with the _sort key. In both
-    cases, multiple columns would be separated by a comma.
+     caller can filter on any of the columns in the assignment_vw table.
+     Inequalities (!=) and some relational operations (&lt;= and &gt;=) are
+     supported. Wildcards are supported (use "*"). Specific columns from the
+     assignment_vw table can be returned with the _columns key. The returned
+     list may be ordered by specifying a column with the _sort key. In both
+     cases, multiple columns would be separated by a comma.
     ---
     tags:
       - Assignment
@@ -1871,8 +1914,8 @@ def get_assignment_stats(assignment_id):
     '''
     Get assignment information for a given ID
     Given an ID, return a row from the assignment_vw table. Specific columns
-    from the assignment_vw table can be returned with the _columns key.
-    Multiple columns should be separated by a comma.
+     from the assignment_vw table can be returned with the _columns key.
+     Multiple columns should be separated by a comma.
     ---
     tags:
       - Assignment
@@ -1912,12 +1955,12 @@ def get_assignment_completed_info():
     '''
     Get completed assignment information (with filtering)
     Return a list of assignments (rows from the assignment_vw table) that have
-    been completed. The caller can filter on any of the columns in the
-    assignment_vw table. Inequalities (!=) and some relational operations
-    (&lt;= and &gt;=) are supported. Wildcards are supported (use "*"). Specific
-    columns from the assignment_vw table can be returned with the _columns key.
-    The returned list may be ordered by specifying a column with the _sort key.
-    In both cases, multiple columns would be separated by a comma.
+     been completed. The caller can filter on any of the columns in the
+     assignment_vw table. Inequalities (!=) and some relational operations
+     (&lt;= and &gt;=) are supported. Wildcards are supported (use "*"). Specific
+     columns from the assignment_vw table can be returned with the _columns key.
+     The returned list may be ordered by specifying a column with the _sort key.
+     In both cases, multiple columns would be separated by a comma.
     ---
     tags:
       - Assignment
@@ -1937,13 +1980,13 @@ def get_assignment_remaining_info():
     '''
     Get remaining assignment information (with filtering)
     Return a list of assignments (rows from the assignment_vw table) that
-    haven't been completed yet. The caller can filter on any of the columns
-    in the assignment_vw table. Inequalities (!=) and some relational
-    operations (&lt;= and &gt;=) are supported. Wildcards are supported
-    (use "*"). Specific columns from the assignment_vw table can be returned
-    with the _columns key. The returned list may be ordered by specifying a
-    column with the _sort key. In both cases, multiple columns would be
-    separated by a comma.
+     haven't been completed yet. The caller can filter on any of the columns
+     in the assignment_vw table. Inequalities (!=) and some relational
+     operations (&lt;= and &gt;=) are supported. Wildcards are supported
+     (use "*"). Specific columns from the assignment_vw table can be returned
+     with the _columns key. The returned list may be ordered by specifying a
+     column with the _sort key. In both cases, multiple columns would be
+     separated by a comma.
     ---
     tags:
       - Assignment
@@ -1965,13 +2008,13 @@ def get_assignment_started():
     '''
     Get started assignment information (with filtering)
     Return a list of assignments (rows from the assignment_vw table) that have
-    been started but not completed. The caller can filter on any of the columns
-    in the assignment_vw table. Inequalities (!=) and some relational
-    operations (&lt;= and &gt;=) are supported. Wildcards are supported
-    (use "*"). Specific columns from the assignment_vw table can be returned
-    with the _columns key. The returned list may be ordered by specifying a
-    column with the _sort key. In both cases, multiple columns would be
-    separated by a comma.
+     been started but not completed. The caller can filter on any of the columns
+     in the assignment_vw table. Inequalities (!=) and some relational
+     operations (&lt;= and &gt;=) are supported. Wildcards are supported
+     (use "*"). Specific columns from the assignment_vw table can be returned
+     with the _columns key. The returned list may be ordered by specifying a
+     column with the _sort key. In both cases, multiple columns would be
+     separated by a comma.
     ---
     tags:
       - Assignment
@@ -1992,7 +2035,7 @@ def get_assignmentprop_columns():
     '''
     Get columns from assignment_property_vw table
     Show the columns in the assignment_property_vw table, which may be used to
-    filter results for the /assignmentprops and /assignmentprop_ids endpoints.
+     filter results for the /assignmentprops and /assignmentprop_ids endpoints.
     ---
     tags:
       - Assignment
@@ -2010,11 +2053,11 @@ def get_assignmentprop_ids():
     '''
     Get assignment property IDs (with filtering)
     Return a list of assignment property IDs. The caller can filter on any of
-    the columns in the assignment_property_vw table. Inequalities (!=) and
-    some relational operations (&lt;= and &gt;=) are supported. Wildcards are
-    supported (use "*"). The returned list may be ordered by specifying a
-    column with the _sort key. Multiple columns should be separated by a
-    comma.
+     the columns in the assignment_property_vw table. Inequalities (!=) and
+     some relational operations (&lt;= and &gt;=) are supported. Wildcards are
+     supported (use "*"). The returned list may be ordered by specifying a
+     column with the _sort key. Multiple columns should be separated by a
+     comma.
     ---
     tags:
       - Assignment
@@ -2038,8 +2081,8 @@ def get_assignmentprops_by_id(aid):
     '''
     Get assignment property information for a given ID
     Given an ID, return a row from the assignment_property_vw table. Specific
-    columns from the assignment_property_vw table can be returned with the
-    _columns key. Multiple columns should be separated by a comma.
+     columns from the assignment_property_vw table can be returned with the
+     _columns key. Multiple columns should be separated by a comma.
     ---
     tags:
       - Assignment
@@ -2066,13 +2109,13 @@ def get_assignmentprop_info():
     '''
     Get assignment property information (with filtering)
     Return a list of assignment properties (rows from the
-    assignment_property_vw table). The caller can filter on any of the columns
-    in the assignment_property_vw table. Inequalities (!=) and some relational
-    operations (&lt;= and &gt;=) are supported. Wildcards are supported
-    (use "*"). Specific columns from the assignment_property_vw table can be
-    returned with the _columns key. The returned list may be ordered by
-    specifying a column with the _sort key. In both cases, multiple columns
-    would be separated by a comma.
+     assignment_property_vw table). The caller can filter on any of the columns
+     in the assignment_property_vw table. Inequalities (!=) and some relational
+     operations (&lt;= and &gt;=) are supported. Wildcards are supported
+     (use "*"). Specific columns from the assignment_property_vw table can be
+     returned with the _columns key. The returned list may be ordered by
+     specifying a column with the _sort key. In both cases, multiple columns
+     would be separated by a comma.
     ---
     tags:
       - Assignment
@@ -2093,9 +2136,9 @@ def new_assignment(project_name):
     '''
     Generate a new assignment
     Given a JSON payload containing specifics, generate a new assignment
-    and return its ID. A "project_name" parameter is required. If a "start"
-    parameter is specified, the assignment will be immediately started after creation.
-    Parameters may be passed in as form-data or JSON.
+     and return its ID. A "project_name" parameter is required. If a "start"
+     parameter is specified, the assignment will be immediately started after creation.
+     Parameters may be passed in as form-data or JSON.
     ---
     tags:
       - Assignment
@@ -2315,12 +2358,12 @@ def new_tasks_for_project(protocol, project_name):
     '''
     Generate one or more new tasks for a new or existing project
     Given a JSON payload containing specifics, generate new tasks for a
-    new or existing project and return the task IDs.
-    Parameters may be passed in as JSON.
-    The "tasks" structure is a dictionary keyed by key text. Each key text will
-    have a dictionary as a value. This [possibly empty] dictionary will
-    contain task properties for the task. Allowable task properties are determined
-    by the project protocol (task_insert_props).
+     new or existing project and return the task IDs.
+     Parameters may be passed in as JSON.
+     The "tasks" structure is a dictionary keyed by key text. Each key text will
+     have a dictionary as a value. This [possibly empty] dictionary will
+     contain task properties for the task. Allowable task properties are determined
+     by the project protocol (task_insert_props).
     ---
     tags:
       - Task
@@ -2414,8 +2457,8 @@ def get_eligible_tasks(protocol):
     '''
     Get eligible tasks for a protocol
     Given a protocol, return a list of eligible (not started) tasks.
-    Specific columns from the table can be returned with the _columns key.
-    Multiple columns should be separated by a comma.
+     Specific columns from the table can be returned with the _columns key.
+     Multiple columns should be separated by a comma.
     ---
     tags:
       - Task
@@ -2445,7 +2488,7 @@ def get_task_columns():
     '''
     Get columns from task_vw table
     Show the columns in the task_vw table, which may be used to filter
-    results for the /tasks and /task_ids endpoints.
+     results for the /tasks and /task_ids endpoints.
     ---
     tags:
       - Task
@@ -2463,10 +2506,10 @@ def get_task_ids():
     '''
     Get task IDs (with filtering)
     Return a list of task IDs. The caller can filter on any of the
-    columns in the task_vw table. Inequalities (!=) and some relational
-    operations (&lt;= and &gt;=) are supported. Wildcards are supported
-    (use "*"). The returned list may be ordered by specifying a column with
-    the _sort key. Multiple columns should be separated by a comma.
+     columns in the task_vw table. Inequalities (!=) and some relational
+     operations (&lt;= and &gt;=) are supported. Wildcards are supported
+     (use "*"). The returned list may be ordered by specifying a column with
+     the _sort key. Multiple columns should be separated by a comma.
     ---
     tags:
       - Task
@@ -2490,8 +2533,8 @@ def get_tasks_by_id(task_id):
     '''
     Get task information for a given ID
     Given an ID, return a row from the task_vw table. Specific columns
-    from the task_vw table can be returned with the _columns key.
-    Multiple columns should be separated by a comma.
+     from the task_vw table can be returned with the _columns key.
+     Multiple columns should be separated by a comma.
     ---
     tags:
       - Task
@@ -2509,7 +2552,9 @@ def get_tasks_by_id(task_id):
           description: Task ID not found
     '''
     result = initialize_result()
-    execute_sql(result, 'SELECT * FROM task_vw', 'data', task_id)
+    execute_sql(result, 'SELECT * FROM task_vw', 'temp', task_id)
+    get_task_properties(result)
+    del result['temp']
     return generate_response(result)
 
 
@@ -2518,12 +2563,12 @@ def get_task_info():
     '''
     Get task information (with filtering)
     Return a list of tasks (rows from the task_vw table). The
-    caller can filter on any of the columns in the task_vw table.
-    Inequalities (!=) and some relational operations (&lt;= and &gt;=) are
-    supported. Wildcards are supported (use "*"). Specific columns from the
-    task_vw table can be returned with the _columns key. The returned
-    list may be ordered by specifying a column with the _sort key. In both
-    cases, multiple columns would be separated by a comma.
+     caller can filter on any of the columns in the task_vw table.
+     Inequalities (!=) and some relational operations (&lt;= and &gt;=) are
+     supported. Wildcards are supported (use "*"). Specific columns from the
+     task_vw table can be returned with the _columns key. The returned
+     list may be ordered by specifying a column with the _sort key. In both
+     cases, multiple columns would be separated by a comma.
     ---
     tags:
       - Task
@@ -2534,7 +2579,9 @@ def get_task_info():
           description: Tasks not found
     '''
     result = initialize_result()
-    execute_sql(result, 'SELECT * FROM task_vw', 'data')
+    execute_sql(result, 'SELECT * FROM task_vw', 'temp')
+    get_task_properties(result)
+    del result['temp']
     return generate_response(result)
 
 
@@ -2615,7 +2662,7 @@ def get_taskprop_columns():
     '''
     Get columns from task_property_vw table
     Show the columns in the task_property_vw table, which may be used to
-    filter results for the /taskprops and /taskprop_ids endpoints.
+     filter results for the /taskprops and /taskprop_ids endpoints.
     ---
     tags:
       - Task
@@ -2633,11 +2680,11 @@ def get_taskprop_ids():
     '''
     Get task property IDs (with filtering)
     Return a list of task property IDs. The caller can filter on any of
-    the columns in the task_property_vw table. Inequalities (!=) and
-    some relational operations (&lt;= and &gt;=) are supported. Wildcards are
-    supported (use "*"). The returned list may be ordered by specifying a
-    column with the _sort key. Multiple columns should be separated by a
-    comma.
+     the columns in the task_property_vw table. Inequalities (!=) and
+     some relational operations (&lt;= and &gt;=) are supported. Wildcards are
+     supported (use "*"). The returned list may be ordered by specifying a
+     column with the _sort key. Multiple columns should be separated by a
+     comma.
     ---
     tags:
       - Task
@@ -2661,8 +2708,8 @@ def get_taskprops_by_id(tid):
     '''
     Get task property information for a given ID
     Given an ID, return a row from the task_property_vw table. Specific
-    columns from the task_property_vw table can be returned with the
-    _columns key. Multiple columns should be separated by a comma.
+     columns from the task_property_vw table can be returned with the
+     _columns key. Multiple columns should be separated by a comma.
     ---
     tags:
       - Task
@@ -2689,13 +2736,13 @@ def get_taskprop_info():
     '''
     Get task property information (with filtering)
     Return a list of task properties (rows from the
-    task_property_vw table). The caller can filter on any of the columns
-    in the task_property_vw table. Inequalities (!=) and some relational
-    operations (&lt;= and &gt;=) are supported. Wildcards are supported
-    (use "*"). Specific columns from the task_property_vw table can be
-    returned with the _columns key. The returned list may be ordered by
-    specifying a column with the _sort key. In both cases, multiple columns
-    would be separated by a comma.
+     task_property_vw table). The caller can filter on any of the columns
+     in the task_property_vw table. Inequalities (!=) and some relational
+     operations (&lt;= and &gt;=) are supported. Wildcards are supported
+     (use "*"). Specific columns from the task_property_vw table can be
+     returned with the _columns key. The returned list may be ordered by
+     specifying a column with the _sort key. In both cases, multiple columns
+     would be separated by a comma.
     ---
     tags:
       - Task
