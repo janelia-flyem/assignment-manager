@@ -68,19 +68,23 @@ def generate_tasks(result, key_type, task_insert_props, existing_project):
     # existing_task now contains key -> task ID
     insert_list = []
     audit_list = []
+    proprecs = {'insert': 0, 'update': 0}
     for key in existing_task:
         if key in query_task:
+            operation = 'update'
             if key in inserted_key:
                 bind = (project_id, None, key_type, key,
                         'Inserted', result['rest']['user'])
                 audit_list.append(bind)
+                operation = 'insert'
             for prop in task_insert_props:
                 if prop in query_task[key]:
                     value = query_task[key][prop]
                     bind = (existing_task[key], prop, value, value)
                     insert_list.append(bind)
+                    proprecs[operation] += 1
     if insert_list:
-        print("Task properties to insert: %s" % len(insert_list))
+        print("Task properties to insert/update: %s" % len(insert_list))
         try:
             g.c.executemany(WRITE['TASK_PROP'], insert_list)
             result['rest']['row_count'] += g.c.rowcount
@@ -96,6 +100,10 @@ def generate_tasks(result, key_type, task_insert_props, existing_project):
         result['rest']['tasks_skipped'] = ignored
     if inserted:
         result['rest']['tasks_inserted'] = inserted
+    if proprecs['insert']:
+        result['rest']['task_properties_inserted'] = proprecs['insert']
+    if proprecs['update']:
+        result['rest']['task_properties_to_update'] = proprecs['update']
     g.db.commit()
 
 
@@ -141,6 +149,8 @@ def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, result)
         raise InvalidUsage(sql_error(err), 500)
     for etask in existing:
         key = etask['key_text']
+        if key not in ipd['tasks']:
+            continue
         result['tasks'].update({key: {"id": etask['id']}})
         # Task properties
         for parm in task_insert_props:

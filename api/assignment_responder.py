@@ -550,13 +550,11 @@ def get_incomplete_assignment_tasks(assignment_id):
     '''
     try:
         stmt = "SELECT id FROM task WHERE assignment_id=%s AND completion_date IS NULL"
+        print(stmt % (assignment_id))
         g.c.execute(stmt, (assignment_id))
-        tasks = g.c.fetchall()
+        return g.c.fetchall()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    if tasks:
-        raise InvalidUsage("Found %s task(s) not yet complete for assignment %s" \
-                           % (len(tasks), assignment_id), 400)
 
 
 def generate_assignment(ipd, result):
@@ -654,14 +652,23 @@ def start_assignment(ipd, result):
     publish_kafka('assignment_start', result, message)
 
 
-def complete_assignment(ipd, result, assignment):
+def complete_assignment(ipd, result, assignment, incomplete_okay = False):
     ''' Start a task.
         Keyword arguments:
           ipd: request payload
           result: result dictionary
           assignment: assignment record
+          incomplete_okay: return if incomplete tasks are found
     '''
-    get_incomplete_assignment_tasks(assignment['id'])
+    incomplete = get_incomplete_assignment_tasks(assignment['id'])
+    if incomplete:
+        message = "Found %s task(s) not yet complete for assignment %s" \
+                  % (len(incomplete), assignment['id'])
+        if incomplete_okay:
+            result['rest']['note'] = message
+            return
+        else:
+            raise InvalidUsage(message, 400)
     start_time = int(assignment['start_date'].timestamp())
     end_time = int(time())
     duration = end_time - start_time
@@ -744,8 +751,7 @@ def start_task(ipd, result):
         # Check the asignment
         assignment = get_assignment_by_id(task['assignment_id'])
         if not assignment['start_date']:
-            raise InvalidUsage("Assignment %s (associated with task %s) has not been started" \
-                               % (task['assignment_id'], ipd['id']), 400)
+            start_assignment({"id": task['assignment_id']}, result)
     # Update the task
     disposition = 'In progress'
     if 'disposition' in ipd:
@@ -817,11 +823,10 @@ def complete_task(ipd, result):
             update_property(ipd['id'], 'task', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     g.db.commit()
-    if 'complete_assignment' in ipd:
-        if ipd['complete_assignment']:
-            assignment = get_assignment_by_id(task['assignment_id'])
-            complete_assignment(ipd, result, assignment)
-            g.db.commit()
+    # If this is the last task, complete the assignment
+    assignment = get_assignment_by_id(task['assignment_id'])
+    complete_assignment(ipd, result, assignment, True)
+    g.db.commit()
 
 
 def get_task_properties(result):
@@ -1749,7 +1754,7 @@ def process_project(protocol):
      a new project and return its ID and a list of tasks. A "project_name"
      parameter is required. There are several optional parameters - check
      the "protocols" endpoint to see which protocols support which parameters.
-     Parameters may be passed in as form-data or JSON.
+     Parameters may be passed in as form data or JSON.
     ---
     tags:
       - Project
@@ -1980,13 +1985,13 @@ def get_assignment_remaining_info():
     '''
     Get remaining assignment information (with filtering)
     Return a list of assignments (rows from the assignment_vw table) that
-     haven't been completed yet. The caller can filter on any of the columns
-     in the assignment_vw table. Inequalities (!=) and some relational
-     operations (&lt;= and &gt;=) are supported. Wildcards are supported
-     (use "*"). Specific columns from the assignment_vw table can be returned
-     with the _columns key. The returned list may be ordered by specifying a
-     column with the _sort key. In both cases, multiple columns would be
-     separated by a comma.
+     haven't been started or completed yet. The caller can filter on any
+     of the columns in the assignment_vw table. Inequalities (!=) and some
+     relational operations (&lt;= and &gt;=) are supported. Wildcards are
+     supported (use "*"). Specific columns from the assignment_vw table can
+     be returned with the _columns key. The returned list may be ordered by
+     specifying a column with the _sort key. In both cases, multiple columns
+     would be separated by a comma.
     ---
     tags:
       - Assignment
@@ -2138,7 +2143,7 @@ def new_assignment(project_name):
     Given a JSON payload containing specifics, generate a new assignment
      and return its ID. A "project_name" parameter is required. If a "start"
      parameter is specified, the assignment will be immediately started after creation.
-     Parameters may be passed in as form-data or JSON.
+     Parameters may be passed in as form data or JSON.
     ---
     tags:
       - Assignment
@@ -2452,6 +2457,49 @@ def new_tasks_for_project(protocol, project_name):
     return generate_response(result)
 
 
+@app.route('/task/properties/<string:task_id>', methods=['OPTIONS', 'POST'])
+def update_task_property(task_id):
+    '''
+    Update task properties
+    Insert or update one or more task properties. Properties (one or more) are
+    specified as key/value pairs as either form data or JSON.
+    ---
+    tags:
+      - Task
+    parameters:
+      - in: path
+        name: task_id
+        schema:
+          type: string
+        required: true
+        description: task ID
+      - in: query
+        name: (key)
+        schema:
+          type: string
+        required: true
+        description: property type
+      - in: query
+        name: (value)
+        schema:
+          type: string
+        required: true
+        description: property value
+    responses:
+      200:
+          description: Task properties inserted/updated
+      404:
+          description: Task properties inserted/updated
+    '''
+    result = initialize_result()
+    # Get payload
+    ipd = receive_payload(result)
+    for key in ipd:
+        update_property(task_id, 'task', key, ipd[key])
+    g.db.commit()
+    return generate_response(result)
+
+
 @app.route('/eligible_tasks/<string:protocol>', methods=['GET'])
 def get_eligible_tasks(protocol):
     '''
@@ -2589,6 +2637,9 @@ def get_task_info():
 def start_task_by_id(task_id): # pragma: no cover
     '''
     Start a task
+    The task to start must have an assignment, and must not have already
+     been started. If the assignment is not started, it will be started
+     automatically.
     ---
     tags:
       - Task
@@ -2622,6 +2673,9 @@ def start_task_by_id(task_id): # pragma: no cover
 def complete_task_by_id(task_id): # pragma: no cover
     '''
     Complete a task
+    The task to complete must be started, and must not have already
+     been completed. If this is the last task in an assignment, the
+     assignment will be completed.
     ---
     tags:
       - Task
