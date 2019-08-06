@@ -3,8 +3,10 @@
 '''
 
 import datetime
+import random
 import re
 import sys
+import string
 import time
 from urllib.parse import parse_qs
 from business_duration import businessDuration
@@ -43,6 +45,15 @@ class InvalidUsage(Exception):
 # *****************************************************************************
 # * Functions                                                                 *
 # *****************************************************************************
+def random_string(strlen=8):
+    ''' Generate a random string of letters and digits
+        Keyword arguments:
+          strlen: length of generated string
+    '''
+    components = string.ascii_letters + string.digits
+    return ''.join(random.choice(components) for i in range(strlen))
+
+
 def add_key_value_pair(key, val, separator, sql, bind):
     ''' Add a key/value pair to the WHERE clause of a SQL statement
         Keyword arguments:

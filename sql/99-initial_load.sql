@@ -56,4 +56,9 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'todo_type','Todo type','Todo type');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'priority','Priority','Priority');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'coordinates','Coordinates','Point coordinates');
+
+INSERT INTO user (name,janelia_id,email,organization) VALUES ('robsvi@gmail.com','svirskasr','svirskasr@hhmi.org','Scientific Computing');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'admin');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'cleave');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'orphan_link');
 SET FOREIGN_KEY_CHECKS=1;

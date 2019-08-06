@@ -303,3 +303,22 @@ LEFT OUTER JOIN assignment a ON (a.id = t.assignment_id)
 JOIN cv_term ktype ON (t.key_type_id = ktype.id)
 JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
 ;
+
+CREATE OR REPLACE VIEW user_vw AS
+SELECT
+    name,
+    janelia_id,
+    email,
+    organization,GROUP_CONCAT(permission) AS permissions
+FROM user_permission up
+JOIN user u ON (u.id=up.user_id)
+GROUP BY 1,2,3,4
+;
+
+CREATE OR REPLACE VIEW user_permission_vw AS
+SELECT
+    name,
+    permission
+FROM user_permission up
+JOIN user u ON (u.id=up.user_id)
+;

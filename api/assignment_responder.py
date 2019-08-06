@@ -24,7 +24,7 @@ import requests
 import assignment_utilities
 from assignment_utilities import (InvalidUsage, call_responder, generate_sql,
                                   get_assignment_by_id, get_task_by_id,
-                                  get_tasks_by_assignment_id,
+                                  get_tasks_by_assignment_id, random_string,
                                   sql_error, update_property, working_duration)
 
 # pylint: disable=W0611
@@ -49,7 +49,6 @@ READ = {
                      + "FIELD(priority,'high','medium','low'),todo_type",
     'GET_ASSOCIATION': "SELECT object FROM cv_term_relationship_vw WHERE "
                        + "subject=%s AND relationship='associated_with'",
-    'PROJECT': "SELECT * FROM project_vw WHERE name=%s",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
@@ -91,7 +90,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.2.5'
+__version__ = '0.2.6'
 app = Flask(__name__)
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -557,6 +556,31 @@ def get_incomplete_assignment_tasks(assignment_id):
         raise InvalidUsage(sql_error(err), 500)
 
 
+def validate_user(user, permission):
+    ''' Validate a user/permission
+        Keyword arguments:
+          user: user name or Janelia ID
+          permission: permission
+    '''
+    stmt = "SELECT * FROM user_vw WHERE name=%s OR janelia_id=%s"
+    try:
+        g.c.execute(stmt, (user, user))
+        usr = g.c.fetchone()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if not usr:
+        raise InvalidUsage("User %s does not exist" % (user), 400)
+    stmt = "SELECT * FROM user_permission_vw WHERE name=%s AND permission=%s"
+    try:
+        g.c.execute(stmt, (usr['name'], permission))
+        per = g.c.fetchone()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if not per:
+        raise InvalidUsage("User %s is not authorized for %s" % (usr['name'], permission), 400)
+    return usr['name']
+
+
 def generate_assignment(ipd, result):
     ''' Generate and persist an assignment and update its tasks.
         Keyword arguments:
@@ -568,6 +592,7 @@ def generate_assignment(ipd, result):
     if not project:
         raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
     ipd['project_name'] = project['name']
+    ipd['user'] = validate_user(ipd['user'], project['protocol'])
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
     if 'tasks' in ipd:
@@ -576,7 +601,7 @@ def generate_assignment(ipd, result):
         num_tasks = projectins.num_tasks
     tasks = get_unassigned_project_tasks(ipd, project['id'], num_tasks)
     try:
-        bind = (ipd['assignment_name'], project['id'], ipd['user'])
+        bind = (ipd['name'], project['id'], ipd['user'])
         g.c.execute(WRITE['INSERT_ASSIGNMENT'], bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['inserted_id'] = g.c.lastrowid
@@ -652,7 +677,7 @@ def start_assignment(ipd, result):
     publish_kafka('assignment_start', result, message)
 
 
-def complete_assignment(ipd, result, assignment, incomplete_okay = False):
+def complete_assignment(ipd, result, assignment, incomplete_okay=False):
     ''' Start a task.
         Keyword arguments:
           ipd: request payload
@@ -667,16 +692,14 @@ def complete_assignment(ipd, result, assignment, incomplete_okay = False):
         if incomplete_okay:
             result['rest']['note'] = message
             return
-        else:
-            raise InvalidUsage(message, 400)
+        raise InvalidUsage(message, 400)
     start_time = int(assignment['start_date'].timestamp())
     end_time = int(time())
-    duration = end_time - start_time
     working = working_duration(start_time, end_time)
     stmt = "UPDATE assignment SET completion_date=FROM_UNIXTIME(%s),disposition='Complete'," \
            + "duration=%s,working_duration=%s WHERE id=%s AND completion_date IS NULL"
     try:
-        bind = (end_time, duration, working, assignment['id'],)
+        bind = (end_time, end_time - start_time, working, assignment['id'],)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
@@ -2154,6 +2177,18 @@ def new_assignment(project_name):
           type: string
         required: true
         description: project name or ID
+      - in: query
+        name: name
+        schema:
+          type: string
+        required: false
+        description: assignment name
+      - in: query
+        name: note
+        schema:
+          type: string
+        required: false
+        description: note
     responses:
       200:
           description: Assignment generated
@@ -2164,7 +2199,8 @@ def new_assignment(project_name):
     # Get payload
     ipd = receive_payload(result)
     ipd['project_name'] = project_name
-    ipd['assignment_name'] = ''
+    if 'name' not in ipd:
+        ipd['name'] = ' '.join([project_name, random_string()])
     check_missing_parms(ipd, ['user'])
     generate_assignment(ipd, result)
     return generate_response(result)
