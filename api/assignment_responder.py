@@ -22,10 +22,10 @@ import pymysql.cursors
 import requests
 
 import assignment_utilities
-from assignment_utilities import (InvalidUsage, call_responder, generate_sql,
-                                  get_assignment_by_id, get_task_by_id,
+from assignment_utilities import (InvalidUsage, call_responder, check_permission,
+                                  generate_sql, get_assignment_by_id, get_task_by_id,
                                   get_tasks_by_assignment_id, random_string,
-                                  sql_error, update_property, working_duration)
+                                  sql_error, update_property, validate_user, working_duration)
 
 # pylint: disable=W0611
 from orphan_link import Orphan_link
@@ -63,11 +63,13 @@ WRITE = {
                          + "%s,%s)",
     'INSERT_PROJECT': "INSERT INTO project (name,protocol_id) VALUES(%s,"
                       + "getCvTermId('protocol',%s,NULL))",
-    'INSERT_CV' : "INSERT INTO cv (name,definition,display_name,version,"
-                  + "is_current) VALUES (%s,%s,%s,%s,%s)",
-    'INSERT_CVTERM' : "INSERT INTO cv_term (cv_id,name,definition,display_name"
-                      + ",is_current,data_type) VALUES (getCvId(%s,''),%s,%s,"
-                      + "%s,%s,%s)",
+    'INSERT_CV': "INSERT INTO cv (name,definition,display_name,version,"
+                 + "is_current) VALUES (%s,%s,%s,%s,%s)",
+    'INSERT_CVTERM': "INSERT INTO cv_term (cv_id,name,definition,display_name"
+                     + ",is_current,data_type) VALUES (getCvId(%s,''),%s,%s,"
+                     + "%s,%s,%s)",
+    'INSERT_USER': "INSERT INTO user (name,first,last,janelia_id,email,organization) "
+                   + "VALUES (%s,%s,%s,%s,%s,%s)",
     'START_TASK': "UPDATE task SET start_date=NOW(),disposition=%s,user=%s WHERE id=%s "
                   + "AND start_date IS NULL",
     'TASK_AUDIT': "INSERT INTO task_audit (project_id,assignment_id,key_type_id,key_text,"
@@ -90,8 +92,8 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.2.6'
-app = Flask(__name__)
+__version__ = '0.3'
+app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
 SERVER = dict()
@@ -556,31 +558,6 @@ def get_incomplete_assignment_tasks(assignment_id):
         raise InvalidUsage(sql_error(err), 500)
 
 
-def validate_user(user, permission):
-    ''' Validate a user/permission
-        Keyword arguments:
-          user: user name or Janelia ID
-          permission: permission
-    '''
-    stmt = "SELECT * FROM user_vw WHERE name=%s OR janelia_id=%s"
-    try:
-        g.c.execute(stmt, (user, user))
-        usr = g.c.fetchone()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    if not usr:
-        raise InvalidUsage("User %s does not exist" % (user), 400)
-    stmt = "SELECT * FROM user_permission_vw WHERE name=%s AND permission=%s"
-    try:
-        g.c.execute(stmt, (usr['name'], permission))
-        per = g.c.fetchone()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    if not per:
-        raise InvalidUsage("User %s is not authorized for %s" % (usr['name'], permission), 400)
-    return usr['name']
-
-
 def generate_assignment(ipd, result):
     ''' Generate and persist an assignment and update its tasks.
         Keyword arguments:
@@ -591,8 +568,10 @@ def generate_assignment(ipd, result):
     project = get_project_by_name_or_id(ipd['project_name'])
     if not project:
         raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
+    ipd['user'] = validate_user(ipd['user'])
+    if not check_permission(ipd['user'], project['protocol']):
+        raise InvalidUsage("%s doesn't have permission to process %s assignments" % (ipd['user'], project['protocol']), 400)
     ipd['project_name'] = project['name']
-    ipd['user'] = validate_user(ipd['user'], project['protocol'])
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
     if 'tasks' in ipd:
@@ -938,9 +917,7 @@ def remove_id_from_index(this_id, index, result):
             raise InvalidUsage(str(esex))
     result['rest']['elasticsearch_deletes'] = es_deletes
 
-# *****************************************************************************
-# * Endpoints                                                                 *
-# *****************************************************************************
+
 @app.errorhandler(InvalidUsage)
 def handle_invalid_usage(error):
     ''' Error handler
@@ -951,10 +928,33 @@ def handle_invalid_usage(error):
     response.status_code = error.status_code
     return response
 
+# *****************************************************************************
+# * Web content                                                               *
+# *****************************************************************************
+@app.route('/web')
+def show_summary():
+    ''' Default route
+    '''
+    try:
+        g.c.execute("SELECT * FROM project_stats_vw")
+        rows = g.c.fetchall()
+    except Exception as err:
+        print(err)
+    arows = []
+    for row in rows:
+        arows.append([row['proofreader'], row['project'], row['protocol'],
+                      row['assignment'], row['task_disposition'],
+                      row['tasks']])
+    return render_template('home.html', urlroot=request.url_root,
+                           assignmentrows=arows)
+
+# *****************************************************************************
+# * Endpoints                                                                 *
+# *****************************************************************************
 
 @app.route('/')
 def show_swagger():
-    ''' Default route
+    ''' Show Swagger docs
     '''
     return render_template('swagger_ui.html')
 
@@ -2192,6 +2192,8 @@ def new_assignment(project_name):
     responses:
       200:
           description: Assignment generated
+      400:
+          description: Assignment not generated (insufficient permission)
       404:
           description: Assignment not generated
     '''
@@ -2202,6 +2204,8 @@ def new_assignment(project_name):
     if 'name' not in ipd:
         ipd['name'] = ' '.join([project_name, random_string()])
     check_missing_parms(ipd, ['user'])
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to make assignments", 400)
     generate_assignment(ipd, result)
     return generate_response(result)
 
@@ -2847,6 +2851,74 @@ def get_taskprop_info():
     execute_sql(result, 'SELECT * FROM task_property_vw', 'data')
     return generate_response(result)
 
+
+# *****************************************************************************
+# * User endpoints                                                            *
+# *****************************************************************************
+@app.route('/users', methods=['GET'])
+def get_user_columns():
+    '''
+    Get users
+    Show all users.
+    ---
+    tags:
+      - User
+    responses:
+      200:
+          description: All users
+    '''
+    result = initialize_result()
+    execute_sql(result, 'SELECT * FROM user_vw', 'data')
+    return generate_response(result)
+
+
+@app.route('/user', methods=['OPTIONS', 'POST'])
+def add_user(): # pragma: no cover
+    '''
+    Add user
+    ---
+    tags:
+      - User
+    parameters:
+      - in: query
+        name: name
+        schema:
+          type: string
+        required: true
+        description: User name (gmail address)
+      - in: query
+        name: janelia_id
+        schema:
+          type: string
+        required: true
+        description: Janelia ID
+    responses:
+      200:
+          description: User added
+      400:
+          description: Missing or incorrect arguments
+    '''
+    result = initialize_result()
+    ipd = receive_payload(result)
+    check_missing_parms(ipd, ['name', 'janelia_id'])
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to add a user", 400)
+    data = call_responder('config', 'config/workday/' + ipd['janelia_id'])
+    if not data:
+        raise InvalidUsage('User %s not found in Workday' % (ipd['user']), 400)
+    work = data['config']
+    try:
+        bind = (ipd['name'], work['first'], work['last'],
+                ipd['janelia_id'], work['email'], work['organization'])
+        g.c.execute(WRITE['INSERT_USER'], bind)
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    result['rest']['row_count'] = g.c.rowcount
+    result['rest']['inserted_id'] = g.c.lastrowid
+    result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_USER'], bind)
+    g.db.commit()
+    publish_cdc(result, {"table": "user", "operation": "insert"})
+    return generate_response(result)
 
 # *****************************************************************************
 

@@ -165,7 +165,7 @@ def get_task_by_id(tid):
 
 
 def get_key_type_id(key_type):
-    ''' Determthe ID for a key type
+    ''' Determine the ID for a key type
         Keyword arguments:
           key_type: key type
     '''
@@ -181,7 +181,7 @@ def get_key_type_id(key_type):
 
 
 def sql_error(err):
-    ''' given a MySQL error, return the error message
+    ''' Given a MySQL error, return the error message
         Keyword arguments:
           err: MySQL error
     '''
@@ -193,6 +193,43 @@ def sql_error(err):
     if error_msg:
         print(error_msg)
     return error_msg
+
+
+def validate_user(user):
+    ''' Validate a user
+        Keyword arguments:
+          user: user name or Janelia ID
+    '''
+    stmt = "SELECT * FROM user_vw WHERE name=%s OR janelia_id=%s"
+    try:
+        g.c.execute(stmt, (user, user))
+        usr = g.c.fetchone()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if not usr:
+        raise InvalidUsage("User %s does not exist" % (user), 400)
+    return usr['name']
+
+
+def check_permission(user, permission):
+    ''' Validate that a user has a specified permission
+        Keyword arguments:
+          user: user name
+          permission: single permission or list of permissions
+    '''
+    if type(permission).__name__ == 'str':
+        permission = [permission]
+    stmt = "SELECT * FROM user_permission_vw WHERE name=%s AND permission=%s"
+    for per in permission:
+        bind = (user, per)
+        try:
+            g.c.execute(stmt, bind)
+            row = g.c.fetchone()
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+        if row:
+            return 1
+    return 0
 
 
 def update_property(pid, table, name, value):

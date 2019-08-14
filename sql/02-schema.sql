@@ -232,6 +232,8 @@ DROP TABLE IF EXISTS `user`;
 CREATE TABLE `user` ( 
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `first` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `last` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `janelia_id` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs,
   `email` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs,
   `organization` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs,

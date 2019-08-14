@@ -307,12 +307,14 @@ JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
 CREATE OR REPLACE VIEW user_vw AS
 SELECT
     name,
+    first,
+    last,
     janelia_id,
     email,
     organization,GROUP_CONCAT(permission) AS permissions
 FROM user_permission up
-JOIN user u ON (u.id=up.user_id)
-GROUP BY 1,2,3,4
+RIGHT OUTER JOIN user u ON (u.id=up.user_id)
+GROUP BY name
 ;
 
 CREATE OR REPLACE VIEW user_permission_vw AS
@@ -321,4 +323,18 @@ SELECT
     permission
 FROM user_permission up
 JOIN user u ON (u.id=up.user_id)
+;
+
+CREATE OR REPLACE VIEW project_stats_vw AS
+SELECT
+    CONCAT(u.first,' ',u.last) AS proofreader,
+    a.project,a.name AS assignment,
+    a.protocol,
+    GROUP_CONCAT(DISTINCT IFNULL(t.disposition,'NULL')) AS task_disposition,
+    COUNT(t.id) AS tasks
+FROM assignment_vw a
+JOIN task_vw t ON (t.assignment=a.name)
+JOIN user u ON (a.user=u.name)
+GROUP BY a.user,project,assignment
+ORDER BY proofreader,project,assignment
 ;
