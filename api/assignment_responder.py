@@ -570,7 +570,8 @@ def generate_assignment(ipd, result):
         raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
     ipd['user'] = validate_user(ipd['user'])
     if not check_permission(ipd['user'], project['protocol']):
-        raise InvalidUsage("%s doesn't have permission to process %s assignments" % (ipd['user'], project['protocol']), 400)
+        raise InvalidUsage("%s doesn't have permission to process %s assignments"
+                           % (ipd['user'], project['protocol']), 400)
     ipd['project_name'] = project['name']
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
