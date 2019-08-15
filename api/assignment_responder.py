@@ -36,6 +36,8 @@ from tasks import create_tasks_from_json, generate_tasks
 # SQL statements
 READ = {
     'ASSIGNMENT': "SELECT * FROM assignment_vw WHERE id=%s",
+    'ASSIGNMENTN': "SELECT a.*,CONCAT(first,' ',last) AS user2 FROM assignment_vw a "
+                   + "JOIN user u ON (u.name=a.user) WHERE a.name='%s'",
     'CVREL': "SELECT subject,relationship,object FROM cv_relationship_vw "
              + "WHERE subject_id=%s OR object_id=%s",
     'CVTERMREL': "SELECT subject,relationship,object FROM "
@@ -49,10 +51,17 @@ READ = {
                      + "FIELD(priority,'high','medium','low'),todo_type",
     'GET_ASSOCIATION': "SELECT object FROM cv_term_relationship_vw WHERE "
                        + "subject=%s AND relationship='associated_with'",
+    'PROJECTA': "SELECT CONCAT(first,' ',last) AS user,disposition,COUNT(1) AS num FROM task_vw t "
+                + "JOIN user u ON (u.name=t.user) WHERE project='%s' AND assignment_id IS NOT NULL "
+                + "GROUP BY 1,2",
+    'PROJECTUA': "SELECT COUNT(1) AS num FROM task_vw WHERE project='%s' AND assignment_id IS NULL",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
                         + "assignment_id IS NULL ORDER BY id",
+    'UPSUMMARY': "SELECT protocol,project,COUNT(1) AS num,priority FROM task_vw WHERE "
+                 + "assignment_id IS NULL GROUP BY project,protocol,priority "
+                 + "ORDER BY priority,protocol,project",
 }
 WRITE = {
     'ASSIGN_TASK': "UPDATE task SET assignment_id=%s,user=%s WHERE assignment_id IS NULL AND id=%s",
@@ -61,8 +70,8 @@ WRITE = {
     'DELETE_UNASSIGNED': "DELETE FROM task WHERE project_id=%s AND assignment_id IS NULL",
     'INSERT_ASSIGNMENT': "INSERT INTO assignment (name,project_id,user) VALUES(%s,"
                          + "%s,%s)",
-    'INSERT_PROJECT': "INSERT INTO project (name,protocol_id) VALUES(%s,"
-                      + "getCvTermId('protocol',%s,NULL))",
+    'INSERT_PROJECT': "INSERT INTO project (name,protocol_id,priority) VALUES(%s,"
+                      + "getCvTermId('protocol',%s,NULL),%s)",
     'INSERT_CV': "INSERT INTO cv (name,definition,display_name,version,"
                  + "is_current) VALUES (%s,%s,%s,%s,%s)",
     'INSERT_CVTERM': "INSERT INTO cv_term (cv_id,name,definition,display_name"
@@ -450,7 +459,7 @@ def insert_project(ipd, result):
     if ipd['project_name'].isdigit():
         raise InvalidUsage("Project name must have at least one alphabetic character", 400)
     try:
-        bind = (ipd['project_name'], ipd['protocol'])
+        bind = (ipd['project_name'], ipd['protocol'], ipd['priority'])
         g.c.execute(WRITE['INSERT_PROJECT'], bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['inserted_id'] = g.c.lastrowid
@@ -494,6 +503,8 @@ def generate_project(protocol, result):
         existing_project = True
         print("Project %s (ID %s) already exists" % (project['name'], project['id']))
     else:
+        if 'priority' not in ipd:
+            ipd['priority'] = 5
         insert_project(ipd, result)
     # Add project properties from input parameters
     for parm in projectins.optional_properties:
@@ -558,6 +569,24 @@ def get_incomplete_assignment_tasks(assignment_id):
         raise InvalidUsage(sql_error(err), 500)
 
 
+def select_user(project, ipd, result):
+    ''' Select a user to assign to.
+        Keyword arguments:
+          project: project instance
+          ipd: request payload
+          result: result dictionary
+    '''
+    if 'user' in ipd:
+        # On behalf of
+        assignment_user = validate_user(ipd['user'])
+    else:
+        assignment_user = result['rest']['user']
+    if not check_permission(assignment_user, project['protocol']):
+        raise InvalidUsage("%s doesn't have permission to process %s assignments"
+                           % (assignment_user, project['protocol']), 400)
+    return assignment_user
+
+
 def generate_assignment(ipd, result):
     ''' Generate and persist an assignment and update its tasks.
         Keyword arguments:
@@ -568,10 +597,7 @@ def generate_assignment(ipd, result):
     project = get_project_by_name_or_id(ipd['project_name'])
     if not project:
         raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
-    ipd['user'] = validate_user(ipd['user'])
-    if not check_permission(ipd['user'], project['protocol']):
-        raise InvalidUsage("%s doesn't have permission to process %s assignments"
-                           % (ipd['user'], project['protocol']), 400)
+    assignment_user = select_user(project, ipd, result)
     ipd['project_name'] = project['name']
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
@@ -581,7 +607,7 @@ def generate_assignment(ipd, result):
         num_tasks = projectins.num_tasks
     tasks = get_unassigned_project_tasks(ipd, project['id'], num_tasks)
     try:
-        bind = (ipd['name'], project['id'], ipd['user'])
+        bind = (ipd['name'], project['id'], assignment_user)
         g.c.execute(WRITE['INSERT_ASSIGNMENT'], bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['inserted_id'] = g.c.lastrowid
@@ -596,13 +622,13 @@ def generate_assignment(ipd, result):
     updated = 0
     for task in tasks:
         try:
-            bind = (result['rest']['inserted_id'], ipd['user'], task['id'])
+            bind = (result['rest']['inserted_id'], assignment_user, task['id'])
             g.c.execute(WRITE['ASSIGN_TASK'], bind)
             result['rest']['row_count'] += g.c.rowcount
             updated += 1
             publish_cdc(result, {"table": "assignment", "operation": "update"})
             bind = (project['id'], result['rest']['inserted_id'], projectins.unit,
-                    task['key_text'], 'Assigned', ipd['user'])
+                    task['key_text'], 'Assigned', assignment_user)
             g.c.execute(WRITE['TASK_AUDIT'], bind)
             if updated >= num_tasks:
                 break
@@ -943,11 +969,117 @@ def show_summary():
         print(err)
     arows = []
     for row in rows:
-        arows.append([row['proofreader'], row['project'], row['protocol'],
-                      row['assignment'], row['task_disposition'],
+        proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
+        assn = '<a href="/web/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
+        arows.append([row['proofreader'], proj, row['protocol'],
+                      assn, row['task_disposition'],
                       row['tasks']])
+    try:
+        g.c.execute(READ['UPSUMMARY'])
+        rows = g.c.fetchall()
+    except Exception as err:
+        print(err)
+    urows = []
+    for row in rows:
+        proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
+        urows.append([proj, row['protocol'], row['num'], row['priority']])
     return render_template('home.html', urlroot=request.url_root,
-                           assignmentrows=arows)
+                           assignmentrows=arows, unassigned=urows)
+
+
+@app.route('/web/project/<string:pname>')
+def show_project(pname):
+    ''' Show information for a project
+    '''
+    try:
+        g.c.execute("SELECT * FROM project_vw WHERE name='%s'" % (pname,))
+        project = g.c.fetchone()
+    except Exception as err:
+        print(err)
+    pprops = []
+    pprops.append(['Protocol:', project['protocol']])
+    pprops.append(['Priority:', project['priority']])
+    try:
+        g.c.execute("SELECT type,value FROM project_property_vw WHERE name='%s'" % (pname,))
+        props = g.c.fetchall()
+    except Exception as err:
+        print(err)
+    for prop in props:
+        if not prop['value']:
+            continue
+        show = prop['type'].replace('_', ' ')
+        show = 'ROI:' if prop['type'] == 'roi' else show.capitalize() + ':'
+        pprops.append([show, prop['value']])
+    try:
+        g.c.execute(READ['PROJECTA'] % (pname,))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        print(err)
+    num_assigned = 0
+    ttasks = []
+    for task in tasks:
+        num_assigned += int(task['num'])
+        ttasks.append([task['user'], task['disposition'], task['num']])
+    try:
+        g.c.execute(READ['PROJECTUA'] % (pname,))
+        tasks = g.c.fetchone()
+    except Exception as err:
+        print(err)
+    num_unassigned = tasks['num'] if tasks else 0
+    num_tasks = num_assigned + num_unassigned
+    num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
+    num_unassigned = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
+    return render_template('project.html', urlroot=request.url_root,
+                           project=pname, pprops=pprops, total=num_tasks,
+                           num_unassigned=num_unassigned,
+                           num_assigned=num_assigned, ttasks=ttasks)
+
+
+@app.route('/web/assignment/<string:aname>')
+def show_assignment(aname):
+    ''' Show information for an assignment
+    '''
+    try:
+        g.c.execute(READ['ASSIGNMENTN'] % (aname,))
+        assignment = g.c.fetchone()
+    except Exception as err:
+        print(err)
+    aprops = []
+    for prop in ['project', 'protocol', 'user2', 'disposition', 'start_date',
+                 'completion_date', 'duration', 'working_duration', 'note']:
+        if assignment[prop]:
+            show = prop.replace('_', ' ')
+            show = 'User:' if prop == 'user2' else show.capitalize() + ':'
+            if prop == 'project':
+                assignment[prop] = '<a href="/web/project/%s">%s</a>' \
+                                   % (assignment[prop], assignment[prop])
+            aprops.append([show, assignment[prop]])
+    try:
+        g.c.execute("SELECT key_type,id,key_text,create_date,start_date,"
+                    + "completion_date,disposition FROM task_vw WHERE "
+                    + "assignment='%s' ORDER BY id" % (aname,))
+        rows = g.c.fetchall()
+    except Exception as err:
+        print(err)
+    arows = []
+    key_type = None
+    for row in rows:
+        if not key_type:
+            key_type = row['key_type']
+            try:
+                g.c.execute("SELECT display_name FROM cv_term_vw WHERE "
+                            + "cv='key' AND cv_term='%s'" % (key_type))
+                display = g.c.fetchone()
+                if display:
+                    key_type = display['display_name']
+            except Exception as err:
+                print(err)
+        arows.append([row['id'], row['key_text'], row['create_date'], row['disposition'],
+                      row['start_date'], row['completion_date']])
+    return render_template('assignment.html', urlroot=request.url_root,
+                           assignment=aname, aprops=aprops,
+                           key_type=key_type, assignmentrows=arows)
+
 
 # *****************************************************************************
 # * Endpoints                                                                 *
@@ -1832,6 +1964,8 @@ def process_project(protocol):
         description: No neurons found
     '''
     result = initialize_result()
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to create projects", 400)
     # Create the project
     generate_project(protocol, result)
     return generate_response(result)
@@ -2185,6 +2319,12 @@ def new_assignment(project_name):
         required: false
         description: assignment name
       - in: query
+        name: user
+        schema:
+          type: string
+        required: false
+        description: user name (for "on behalf of" use case)
+      - in: query
         name: note
         schema:
           type: string
@@ -2204,9 +2344,6 @@ def new_assignment(project_name):
     ipd['project_name'] = project_name
     if 'name' not in ipd:
         ipd['name'] = ' '.join([project_name, random_string()])
-    check_missing_parms(ipd, ['user'])
-    if not check_permission(result['rest']['user'], 'admin'):
-        raise InvalidUsage("You don't have permission to make assignments", 400)
     generate_assignment(ipd, result)
     return generate_response(result)
 
@@ -2477,6 +2614,8 @@ def new_tasks_for_project(protocol, project_name):
     if not isinstance(ipd['tasks'], (dict)):
         raise InvalidUsage("Payload must be a JSON dictionary")
     if not project:
+        if 'priority' not in ipd:
+            ipd['priority'] = 5
         insert_project(ipd, result)
         project = dict()
         project['id'] = result['rest']['inserted_id']

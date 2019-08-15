@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
+{% endblock %}
+{% block onload %}
+onload="tableInitialize();"
+{% endblock %}
+
+{% block content %}
+  <h2>Assignments</h2>
+  <table id="assignments" class="tablesorter standard">
+  <thead>
+  <tr><th>Proofreader</th><th>Project</th><th>Protocol</th><th>Assignment</th><th>Task disposition</th><th>Task count</th></tr>
+  </thead>
+  <tbody>
+  {% for row in assignmentrows %}
+    <tr>
+      <td>{{ row[0] }}</td>
+      <td>{{ row[1]|safe }}</td>
+      <td>{{ row[2] }}</td>
+      <td>{{ row[3]|safe }}</td>
+      <td>{{ row[4] }}</td>
+      <td style="text-align: center">{{ row[5] }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+  </table>
+  <h2>Projects with unassigned tasks</h2>
+  <table id="unassigned" class="tablesorter standard">
+  <thead>
+  <tr><th>Project</th><th>Protocol</th><th>Tasks</th><th>Priority</th></tr>
+  </thead>
+  <tbody>
+  {% for row in unassigned %}
+    <tr>
+      <td>{{ row[0]|safe }}</td>
+      <td>{{ row[1] }}</td>
+      <td style="text-align: center">{{ row[2] }}</td>
+      <td style="text-align: center">{{ row[3] }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+  </table>
+{% endblock %}

@@ -120,6 +120,7 @@ SELECT
     p.id          AS id,
     p.name        AS name,
     ptype.name    AS protocol,
+    p.priority    AS priority,
     p.disposition AS disposition,
     pp.value      AS note,
     p.create_date AS create_date
@@ -183,6 +184,8 @@ SELECT
     p.name             AS project,
     t.project_id       AS project_id,
     a.name             AS assignment,
+    p.protocol         AS protocol,
+    p.priority         AS priority,
     t.assignment_id    AS assignment_id,
     t.key_type_id      AS key_type_id,
     ktype.name         AS key_type,
@@ -196,7 +199,7 @@ SELECT
     t.working_duration AS working_duration,
     t.create_date      AS create_date
 FROM task t
-JOIN project p ON (p.id = t.project_id)
+JOIN project_vw p ON (p.id = t.project_id)
 LEFT OUTER JOIN assignment a ON (a.id = t.assignment_id)
 JOIN cv_term ktype ON (t.key_type_id = ktype.id)
 JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')

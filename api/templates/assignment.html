@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="#">Assignment</a></li>
+{% endblock %}
+{% block css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
+{% endblock %}
+{% block onload %}
+onload="tableInitialize();"
+{% endblock %}
+
+{% block content %}
+  <h3>{{ assignment }}</h3>
+  <table id='assignmentprops'>
+  <tbody>
+  {% for row in aprops %}
+    <tr><td>{{ row[0] }}</td><td>{{ row[1]|safe }}</td></tr>
+  {% endfor %}
+  </tbody>
+  </table>
+  <br>
+  <h2>Tasks</h2>
+  <table id="assignments" class="tablesorter standard">
+  <thead>
+  <tr><th>ID</th><th>{{ key_type }}</th><th>Created</th><th>Disposition</th><th>Started</th><th>Completed</th></tr>
+  </thead>
+  <tbody>
+  {% for row in assignmentrows %}
+    <tr>
+      <td>{{ row[0] }}</td>
+      <td>{{ row[1] }}</td>
+      <td style="text-align: center">{{ row[2] }}</td>
+      <td style="text-align: center">{{ row[3] }}</td>
+      <td style="text-align: center">{{ row[4] }}</td>
+      <td style="text-align: center">{{ row[5] }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+  </table>
+{% endblock %}

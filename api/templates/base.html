@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% block head %}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+  <link  rel="stylesheet" href="http://informatics-prod.int.janelia.org/css/tablesorter-jrc1.css">
+  <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+  <script src="http://informatics-prod.int.janelia.org/js/jquery/jquery.tablesorter.js" type="text/JavaScript"></script>
+  <script src="http://informatics-prod.int.janelia.org/js/tablesorter.js" type="text/JavaScript"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block css%}
+  {% endblock %}
+  {% endblock %}
+</head>
+<body {% block onload %}{% endblock %}>
+  <div class="pb-0 mt-0 mb-0 border-bottom">
+    <div class="pull-left">
+      <span style="font-weight: 200; font-size: 24px">Fly EM Assignment Manager</span>
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb" style="background:#222;">
+          <li class="breadcrumb-item active" aria-current="page"><a href="{{ urlroot }}/web">Home</a></li>
+          {% block breadcrumbs %}{% endblock %}
+        </ol>
+      </nav>
+    </div>
+    <div class="float-right" style="margin-top: -90px">
+      <img style="padding-right: 5px;" class='pull-right' src="http://informatics-prod.int.janelia.org/images/gray_janelia_logo.png">
+    </div>
+    <div class="clearfix"></div>
+  </div>
+  <br>
+  <div id="content">{% block content %}{% endblock %}</div>
+  <br>
+</body>
+</html>
