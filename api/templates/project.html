@@ -22,14 +22,5 @@ onload="tableInitialize();"
   <h3>Total tasks: {{ total }}</h3>
   <h3>Unassigned tasks: {{ num_unassigned }}</h3>
   <h3>Assigned tasks: {{ num_assigned }}</h3>
-  <table id="ttasks" class="tablesorter standard">
-  <thead>
-  <tr><th>User</th><th>Disposition</th><th>Count</th></tr>
-  </thead>
-  <tbody>
-  {% for row in ttasks %}
-    <tr><td>{{ row[0] }}</td><td>{{ row[1] }}</td><td>{{ row[2] }}</td></tr>
-  {% endfor %}
-  </tbody>
-  </table>
+  {{ assigned|safe }}
 {% endblock %}

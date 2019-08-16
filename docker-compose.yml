@@ -24,7 +24,6 @@ services:
       - db
     volumes:
         - ./api:/api
-        - static_volume:/api/static
     environment:
       - TZ=$TZ
       - PYTHONUNBUFFERED=1

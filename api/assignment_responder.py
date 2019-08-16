@@ -975,7 +975,8 @@ def show_summary():
         </thead>
         <tbody>
         """
-        template = "<tr>" + ''.join("<td>%s</td>")*5 + '<td style="text-align: center">%s</td></tr>'
+        template = "<tr>" + ''.join("<td>%s</td>")*4 \
+                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
         for row in rows:
             proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
             assn = '<a href="/web/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
@@ -1048,7 +1049,7 @@ def show_project(pname):
         </thead>
         <tbody>
         '''
-        template = "<tr>" + ''.join("<td>%s</td>")*3 + "</tr>"
+        template = "<tr><td>%s</td>" + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
         for task in tasks:
             num_assigned += int(task['num'])
             assigned += template % (task['user'], task['disposition'], task['num'])
@@ -1097,7 +1098,7 @@ def show_assignment(aname):
         rows = g.c.fetchall()
     except Exception as err:
         print(err)
-    arows = []
+    trows = []
     key_type = None
     for row in rows:
         if not key_type:
@@ -1110,11 +1111,11 @@ def show_assignment(aname):
                     key_type = display['display_name']
             except Exception as err:
                 print(err)
-        arows.append([row['id'], row['key_text'], row['create_date'], row['disposition'],
+        trows.append([row['id'], row['key_text'], row['create_date'], row['disposition'],
                       row['start_date'], row['completion_date']])
     return render_template('assignment.html', urlroot=request.url_root,
                            assignment=aname, aprops=aprops,
-                           key_type=key_type, assignmentrows=arows)
+                           key_type=key_type, taskrows=trows)
 
 
 # *****************************************************************************
@@ -1963,6 +1964,12 @@ def process_project(protocol):
           type: string
         required: true
         description: project name
+      - in: query
+        name: priority
+        schema:
+          type: integer
+        required: false
+        description: project priority (defaults to 5)
       - in: query
         name: note
         schema:
