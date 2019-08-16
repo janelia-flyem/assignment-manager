@@ -105,6 +105,7 @@ __version__ = '0.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
+app.config['JSON_SORT_KEYS'] = False
 SERVER = dict()
 CORS(app)
 try:
@@ -975,12 +976,13 @@ def show_summary():
         </thead>
         <tbody>
         """
-        template = "<tr>" + ''.join("<td>%s</td>")*4 \
+        template = '<tr class="%s">' + ''.join("<td>%s</td>")*4 \
                    + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
         for row in rows:
+            rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
             proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
             assn = '<a href="/web/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
-            assignments += template % (row['proofreader'], proj, row['protocol'],
+            assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
                                        assn, row['task_disposition'],
                                        row['tasks'])
         assignments += "</tbody></table>"
@@ -2013,6 +2015,38 @@ def process_project(protocol):
     generate_project(protocol, result)
     return generate_response(result)
 
+
+@app.route('/projects/eligible', methods=['GET'])
+def get_projects_eligible():
+    '''
+    Get eligible projects
+    Return a list of projects from which the calling user can genearte assignments.
+    ---
+    tags:
+      - Projects
+    responses:
+      200:
+          description: dictionary of eligible projects (project: protocol)
+      404:
+          description: Projects not found
+    '''
+    result = initialize_result()
+    if not 'user' in result['rest']:
+        raise InvalidUsage('User was not specified', 400)
+    permissions = check_permission(result['rest']['user'])
+    try:
+        g.c.execute(READ['UPSUMMARY'])
+        rows = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    result['projects'] = dict()
+    for row in rows:
+        if row['protocol'] in permissions:
+            result['projects'][row['project']] = row['protocol']
+    if not result['projects']:
+        raise InvalidUsage('No eligible projects', 404)
+    result['rest']['row_count'] = len(result['projects'])
+    return generate_response(result)
 
 # *****************************************************************************
 # * Assignment endpoints                                                      *

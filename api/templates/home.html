@@ -2,12 +2,25 @@
 {% block css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
 {% endblock %}
+{% block script %}
+<script>
+function show_all() {
+  $(".open").show();
+  $(".complete").show();
+  $('#hc').removeAttr("disabled");
+  $('#ho').removeAttr("disabled");
+}
+</script>
+{% endblock %}
 {% block onload %}
 onload="tableInitialize();"
 {% endblock %}
 
 {% block content %}
-  <h2>Assignments</h2>
+  <h2>Assignments
+  <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
+  <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
+  <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button></h2>
   {{ assignments|safe }}
   <h2>Projects with unassigned tasks</h2>
   {{ unassigned|safe }}

@@ -211,12 +211,21 @@ def validate_user(user):
     return usr['name']
 
 
-def check_permission(user, permission):
+def check_permission(user, permission = None):
     ''' Validate that a user has a specified permission
         Keyword arguments:
           user: user name
           permission: single permission or list of permissions
     '''
+    if not permission:
+        stmt = "SELECT * FROM user_permission_vw WHERE name=%s"
+        try:
+            g.c.execute(stmt, (user))
+            rows = g.c.fetchall()
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+        perm = [row['permission'] for row in rows]
+        return perm
     if type(permission).__name__ == 'str':
         permission = [permission]
     stmt = "SELECT * FROM user_permission_vw WHERE name=%s AND permission=%s"
