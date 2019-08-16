@@ -211,7 +211,7 @@ def validate_user(user):
     return usr['name']
 
 
-def check_permission(user, permission = None):
+def check_permission(user, permission=None):
     ''' Validate that a user has a specified permission
         Keyword arguments:
           user: user name

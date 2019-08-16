@@ -2031,7 +2031,7 @@ def get_projects_eligible():
           description: Projects not found
     '''
     result = initialize_result()
-    if not 'user' in result['rest']:
+    if 'user' not in result['rest']:
         raise InvalidUsage('User was not specified', 400)
     permissions = check_permission(result['rest']['user'])
     try:
