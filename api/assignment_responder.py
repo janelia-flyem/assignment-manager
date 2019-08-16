@@ -967,24 +967,47 @@ def show_summary():
         rows = g.c.fetchall()
     except Exception as err:
         print(err)
-    arows = []
-    for row in rows:
-        proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
-        assn = '<a href="/web/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
-        arows.append([row['proofreader'], proj, row['protocol'],
-                      assn, row['task_disposition'],
-                      row['tasks']])
+    if rows:
+        assignments = """
+        <table id="assignments" class="tablesorter standard">
+        <thead>
+        <tr><th>Proofreader</th><th>Project</th><th>Protocol</th><th>Assignment</th><th>Task disposition</th><th>Task count</th></tr>
+        </thead>
+        <tbody>
+        """
+        template = "<tr>" + ''.join("<td>%s</td>")*5 + '<td style="text-align: center">%s</td></tr>'
+        for row in rows:
+            proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
+            assn = '<a href="/web/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
+            assignments += template % (row['proofreader'], proj, row['protocol'],
+                                       assn, row['task_disposition'],
+                                       row['tasks'])
+        assignments += "</tbody></table>"
+    else:
+        assignments = "There are no open assignments"
     try:
         g.c.execute(READ['UPSUMMARY'])
         rows = g.c.fetchall()
     except Exception as err:
         print(err)
-    urows = []
-    for row in rows:
-        proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
-        urows.append([proj, row['protocol'], row['num'], row['priority']])
+    if rows:
+        unassigned = '''
+        <table id="unassigned" class="tablesorter standard">
+        <thead>
+        <tr><th>Project</th><th>Protocol</th><th>Tasks</th><th>Priority</th></tr>
+        </thead>
+        <tbody>
+        '''
+        template = "<tr>" + ''.join("<td>%s</td>")*2 \
+                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+        for row in rows:
+            proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
+            unassigned += template % (proj, row['protocol'], row['num'], row['priority'])
+        unassigned += "</tbody></table>"
+    else:
+        unassigned = "There are no projects with unassigned tasks"
     return render_template('home.html', urlroot=request.url_root,
-                           assignmentrows=arows, unassigned=urows)
+                           assignments=assignments, unassigned=unassigned)
 
 
 @app.route('/web/project/<string:pname>')
