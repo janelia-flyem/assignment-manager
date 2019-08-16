@@ -1033,16 +1033,29 @@ def show_project(pname):
         show = prop['type'].replace('_', ' ')
         show = 'ROI:' if prop['type'] == 'roi' else show.capitalize() + ':'
         pprops.append([show, prop['value']])
+    # Assigned tasks
     try:
         g.c.execute(READ['PROJECTA'] % (pname,))
         tasks = g.c.fetchall()
     except Exception as err:
         print(err)
     num_assigned = 0
-    ttasks = []
-    for task in tasks:
-        num_assigned += int(task['num'])
-        ttasks.append([task['user'], task['disposition'], task['num']])
+    if tasks:
+        assigned = '''
+        <table id="ttasks" class="tablesorter standard">
+        <thead>
+        <tr><th>User</th><th>Disposition</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+        '''
+        template = "<tr>" + ''.join("<td>%s</td>")*3 + "</tr>"
+        for task in tasks:
+            num_assigned += int(task['num'])
+            assigned += template % (task['user'], task['disposition'], task['num'])
+        assigned += "</tbody></table>"
+    else:
+        assigned = ''
+    # Unassigned tasks
     try:
         g.c.execute(READ['PROJECTUA'] % (pname,))
         tasks = g.c.fetchone()
@@ -1055,7 +1068,7 @@ def show_project(pname):
     return render_template('project.html', urlroot=request.url_root,
                            project=pname, pprops=pprops, total=num_tasks,
                            num_unassigned=num_unassigned,
-                           num_assigned=num_assigned, ttasks=ttasks)
+                           num_assigned=num_assigned, assigned=assigned)
 
 
 @app.route('/web/assignment/<string:aname>')
