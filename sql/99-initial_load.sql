@@ -63,4 +63,7 @@ INSERT INTO user (name,first,last,janelia_id,email,organization) VALUES ('robsvi
 INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'admin');
 INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'cleave');
 INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'orphan_link');
+INSERT INTO user (name,first,last,janelia_id,email,organization) VALUES ('olbris@gmail.com','Donald','olbris','olbrisd','olbrisd@hhmi.org','Software Engineering');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='olbrisd'),'admin');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='olbrisd'),'orphan_link');
 SET FOREIGN_KEY_CHECKS=1;

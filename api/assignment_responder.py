@@ -19,6 +19,7 @@ from flask_swagger import swagger
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 import pymysql.cursors
+import pymysql.err
 import requests
 
 import assignment_utilities
@@ -191,9 +192,7 @@ def call_profile(token):
         return req.json()
     if req.status_code == 401:
         raise InvalidUsage("Please provide a valid Auth Token", 401)
-    print("Could not get response from %s" % (url))
-    print(req)
-    sys.exit(-1)
+    raise InvalidUsage("No response from %s" % (url))
 
 
 def initialize_result():
@@ -458,7 +457,7 @@ def insert_project(ipd, result):
     '''
     # Insert project record
     if ipd['project_name'].isdigit():
-        raise InvalidUsage("Project name must have at least one alphabetic character", 400)
+        raise InvalidUsage("Project name must have at least one alphabetic character")
     try:
         bind = (ipd['project_name'], ipd['protocol'], ipd['priority'])
         g.c.execute(WRITE['INSERT_PROJECT'], bind)
@@ -480,13 +479,13 @@ def generate_project(protocol, result):
     ipd = receive_payload(result)
     check_missing_parms(ipd, ['project_name'])
     if ipd['project_name'].isdigit():
-        raise InvalidUsage("Project name must have at least one alphabetic character", 400)
+        raise InvalidUsage("Project name must have at least one alphabetic character")
     if app.config['DEBUG']:
         print("Generating %s project %s" % (protocol, ipd['project_name']))
     ipd['protocol'] = protocol
     # Is this a valid protocol?
     if not valid_cv_term('protocol', protocol):
-        raise InvalidUsage("%s in not a valid protocol" % protocol, 400)
+        raise InvalidUsage("%s in not a valid protocol" % protocol)
     # Instattiate project
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
@@ -584,7 +583,7 @@ def select_user(project, ipd, result):
         assignment_user = result['rest']['user']
     if not check_permission(assignment_user, project['protocol']):
         raise InvalidUsage("%s doesn't have permission to process %s assignments"
-                           % (assignment_user, project['protocol']), 400)
+                           % (assignment_user, project['protocol']))
     return assignment_user
 
 
@@ -654,7 +653,7 @@ def start_assignment(ipd, result):
     if not assignment:
         raise InvalidUsage("Assignment %s does not exist" % ipd['id'], 404)
     if assignment['start_date']:
-        raise InvalidUsage("Assignment %s was already started" % ipd['id'], 400)
+        raise InvalidUsage("Assignment %s was already started" % ipd['id'])
     # Update the assignment
     try:
         stmt = "UPDATE assignment SET start_date=NOW()," \
@@ -699,7 +698,7 @@ def complete_assignment(ipd, result, assignment, incomplete_okay=False):
         if incomplete_okay:
             result['rest']['note'] = message
             return
-        raise InvalidUsage(message, 400)
+        raise InvalidUsage(message)
     start_time = int(assignment['start_date'].timestamp())
     end_time = int(time())
     working = working_duration(start_time, end_time)
@@ -714,7 +713,7 @@ def complete_assignment(ipd, result, assignment, incomplete_okay=False):
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     if result['rest']['row_count'] == 0:
-        raise InvalidUsage("Assignment %s was not updated" % (assignment['id']), 400)
+        raise InvalidUsage("Assignment %s was not updated" % (assignment['id']))
     constructor = globals()[assignment['protocol'].capitalize()]
     projectins = constructor()
     for parm in projectins.optional_properties:
@@ -774,10 +773,10 @@ def start_task(ipd, result):
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
     if task['start_date']:
-        raise InvalidUsage("Task %s was already started" % ipd['id'], 400)
+        raise InvalidUsage("Task %s was already started" % ipd['id'])
     if not hasattr(projectins, 'no_assignment'):
         if not task['assignment_id']:
-            raise InvalidUsage("Task %s is not assigned" % ipd['id'], 400)
+            raise InvalidUsage("Task %s is not assigned" % ipd['id'])
         # Check the asignment
         assignment = get_assignment_by_id(task['assignment_id'])
         if not assignment['start_date']:
@@ -787,7 +786,7 @@ def start_task(ipd, result):
     if 'disposition' in ipd:
         disposition = ipd['disposition']
         if not valid_cv_term('disposition', disposition):
-            raise InvalidUsage("%s in not a valid disposition" % disposition, 400)
+            raise InvalidUsage("%s in not a valid disposition" % disposition)
     try:
         bind = (disposition, result['rest']['user'], ipd['id'],)
         g.c.execute(WRITE['START_TASK'], bind)
@@ -823,9 +822,9 @@ def complete_task(ipd, result):
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
     if not task['start_date']:
-        raise InvalidUsage("Task %s was not started" % ipd['id'], 400)
+        raise InvalidUsage("Task %s was not started" % ipd['id'])
     if task['completion_date']:
-        raise InvalidUsage("Task %s was already completed" % ipd['id'], 400)
+        raise InvalidUsage("Task %s was already completed" % ipd['id'])
     start_time = int(task['start_date'].timestamp())
     end_time = int(time())
     duration = end_time - start_time
@@ -836,7 +835,7 @@ def complete_task(ipd, result):
     if 'disposition' in ipd:
         disposition = ipd['disposition']
         if not valid_cv_term('disposition', disposition):
-            raise InvalidUsage("%s in not a valid disposition" % disposition, 400)
+            raise InvalidUsage("%s in not a valid disposition" % disposition)
     try:
         bind = (end_time, disposition, duration, working, ipd['id'],)
         g.c.execute(WRITE['COMPLETE_TASK'], bind)
@@ -1290,7 +1289,7 @@ def pingdb():
     try:
         g.db.ping()
     except Exception as err:
-        raise InvalidUsage(sql_error(err), 400)
+        raise InvalidUsage(sql_error(err))
     return generate_response(result)
 
 
@@ -1733,7 +1732,7 @@ def reload_protocol(protocol):
     '''
     result = initialize_result()
     if not protocol in sys.modules:
-        raise InvalidUsage("Protocol %s is not loaded" % protocol, 400)
+        raise InvalidUsage("Protocol %s is not loaded" % protocol)
     modobj = import_module(protocol)
     reload(modobj)
     return generate_response(result)
@@ -2010,7 +2009,7 @@ def process_project(protocol):
     '''
     result = initialize_result()
     if not check_permission(result['rest']['user'], 'admin'):
-        raise InvalidUsage("You don't have permission to create projects", 400)
+        raise InvalidUsage("You don't have permission to create projects")
     # Create the project
     generate_project(protocol, result)
     return generate_response(result)
@@ -2023,16 +2022,16 @@ def get_projects_eligible():
     Return a list of projects from which the calling user can genearte assignments.
     ---
     tags:
-      - Projects
+      - Project
     responses:
       200:
-          description: dictionary of eligible projects (project: protocol)
+          description: dictionary of eligible projects (project/protocol)
       404:
           description: Projects not found
     '''
     result = initialize_result()
     if 'user' not in result['rest']:
-        raise InvalidUsage('User was not specified', 400)
+        raise InvalidUsage('User was not specified')
     permissions = check_permission(result['rest']['user'])
     try:
         g.c.execute(READ['UPSUMMARY'])
@@ -2453,7 +2452,7 @@ def delete_assignment(assignment_id):
     tasks = get_tasks_by_assignment_id(assignment_id)
     for task in tasks:
         if task['start_date']:
-            raise InvalidUsage("Assignment %s has one or more started tasks" % assignment_id, 400)
+            raise InvalidUsage("Assignment %s has one or more started tasks" % (assignment_id))
     try:
         stmt = "UPDATE task SET assignment_id=NULL WHERE assignment_id = %s"
         bind = (assignment_id)
@@ -2539,9 +2538,9 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
     if not assignment:
         raise InvalidUsage("Assignment %s does not exist" % ipd['id'], 404)
     if not assignment['start_date']:
-        raise InvalidUsage("Assignment %s was not started" % ipd['id'], 400)
+        raise InvalidUsage("Assignment %s was not started" % ipd['id'])
     if assignment['completion_date']:
-        raise InvalidUsage("Assignment %s was already completed" % ipd['id'], 400)
+        raise InvalidUsage("Assignment %s was already completed" % ipd['id'])
     complete_assignment(ipd, result, assignment)
     g.db.commit()
     return generate_response(result)
@@ -2579,7 +2578,7 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
     if not assignment:
         raise InvalidUsage("Assignment %s does not exist" % assignment_id, 404)
     if not assignment['start_date']:
-        raise InvalidUsage("Assignment %s was not started" % assignment_id, 400)
+        raise InvalidUsage("Assignment %s was not started" % assignment_id)
     # Look for started tasks
     try:
         stmt = "SELECT id FROM task WHERE assignment_id=%s AND start_date IS NOT NULL"
@@ -2589,7 +2588,7 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
         raise InvalidUsage(sql_error(err), 500)
     if tasks:
         raise InvalidUsage("Found %s task(s) already started for assignment %s" \
-                           % (len(tasks), assignment_id), 400)
+                           % (len(tasks), assignment_id))
     try:
         stmt = "UPDATE assignment SET start_date=NULL,completion_date=NULL " \
                + "WHERE id=%s"
@@ -2701,7 +2700,7 @@ def new_tasks_for_project(protocol, project_name):
     if hasattr(projectins, 'validate_tasks'):
         error = projectins.validate_tasks(ipd['tasks'])
         if error:
-            raise InvalidUsage(error, 400)
+            raise InvalidUsage(error)
     # Add project properties from input parameters
     for parm in projectins.optional_properties:
         if parm in ipd:
@@ -3119,15 +3118,17 @@ def add_user(): # pragma: no cover
     ipd = receive_payload(result)
     check_missing_parms(ipd, ['name', 'janelia_id'])
     if not check_permission(result['rest']['user'], 'admin'):
-        raise InvalidUsage("You don't have permission to add a user", 400)
+        raise InvalidUsage("You don't have permission to add a user")
     data = call_responder('config', 'config/workday/' + ipd['janelia_id'])
     if not data:
-        raise InvalidUsage('User %s not found in Workday' % (ipd['user']), 400)
+        raise InvalidUsage('User %s not found in Workday' % (ipd['user']))
     work = data['config']
     try:
         bind = (ipd['name'], work['first'], work['last'],
                 ipd['janelia_id'], work['email'], work['organization'])
         g.c.execute(WRITE['INSERT_USER'], bind)
+    except pymysql.IntegrityError:
+        raise InvalidUsage("User %s is already in the database" % (ipd['name']))
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     result['rest']['row_count'] = g.c.rowcount
