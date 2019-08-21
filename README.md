@@ -29,9 +29,17 @@ docker push registry.int.janelia.org/flyem/assignment-manager
 After installing on the production server, set up the environment for Docker.
 Rename env_template to .env, and change any values enclosed in angle brackets.
 
+To create a new database instance:
+```
+sudo mkdir /data/mysql/assignment
+sudo chown mysql:mysqldba /data/mysql/assignment
+docker-compose -f docker-compose-prod.yml up db
+```
+
 Take the following steps to start the system:
 ```
 cd /opt/flask/assignment-responder
+docker pull registry.int.janelia.org/flyem/assignment-manager
 docker-compose -f docker-compose-prod.yml up -d
 ```
 
