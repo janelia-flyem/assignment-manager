@@ -102,7 +102,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.3'
+__version__ = '0.4.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -877,12 +877,10 @@ def get_task_properties(result):
         result['data'].append(task)
 
 
-def add_user_permissions(result, user, permissions):
-    ''' Add permissions for an existing user
+def get_user_id(user):
+    ''' Get a user's ID from the "user" table
         Keyword arguments:
-          result: result dictionary
           user: user
-          permissions: list of permissions
     '''
     try:
         g.c.execute("SELECT id FROM user WHERE name='%s'" % user)
@@ -891,13 +889,25 @@ def add_user_permissions(result, user, permissions):
         raise InvalidUsage(sql_error(err), 500)
     if 'id' not in row:
         raise InvalidUsage("User %s was not found" % user, 404)
+    return row['id']
+
+
+def add_user_permissions(result, user, permissions):
+    ''' Add permissions for an existing user
+        Keyword arguments:
+          result: result dictionary
+          user: user
+          permissions: list of permissions
+    '''
+    user_id = get_user_id(user)
     for permission in permissions:
+        sql = "INSERT INTO user_permission (user_id,permission) VALUES " \
+              + "(%s,'%s') ON DUPLICATE KEY UPDATE permission=permission"
         try:
-            sql = "INSERT INTO user_permission (user_id,permission) VALUES " \
-                  + "(%s,'%s') ON DUPLICATE KEY UPDATE permission=permission"
-            bind = (row['id'], permission,)
+            bind = (user_id, permission,)
             g.c.execute(sql % bind)
             result['rest']['row_count'] += g.c.rowcount
+            publish_cdc(result, {"table": "user_permission", "operation": "insert"})
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
 
@@ -3171,6 +3181,93 @@ def add_user(): # pragma: no cover
         add_user_permissions(result, ipd['name'], ipd['permissions'])
     g.db.commit()
     publish_cdc(result, {"table": "user", "operation": "insert"})
+    return generate_response(result)
+
+
+@app.route('/user_permissions', methods=['OPTIONS', 'POST'])
+def add_user_permission(): # pragma: no cover
+    '''
+    Add user permissions
+    ---
+    tags:
+      - User
+    parameters:
+      - in: query
+        name: name
+        schema:
+          type: string
+        required: true
+        description: User name (gmail address)
+      - in: query
+        name: permissions
+        schema:
+          type: list
+        required: true
+        description: List of permissions
+    responses:
+      200:
+          description: User permission(s) added
+      400:
+          description: Missing or incorrect arguments
+    '''
+    result = initialize_result()
+    ipd = receive_payload(result)
+    check_missing_parms(ipd, ['name', 'permissions'])
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to change user permissions")
+    if type(ipd['permissions']).__name__ != 'list':
+        raise InvalidUsage('Permissions must be specified as a list')
+    result['rest']['row_count'] = 0
+    add_user_permissions(result, ipd['name'], ipd['permissions'])
+    g.db.commit()
+    return generate_response(result)
+
+
+@app.route('/user_permissions', methods=['OPTIONS', 'DELETE'])
+def delete_user_permission(): # pragma: no cover
+    '''
+    Delete user permissions
+    ---
+    tags:
+      - User
+    parameters:
+      - in: query
+        name: name
+        schema:
+          type: string
+        required: true
+        description: User name (gmail address)
+      - in: query
+        name: permissions
+        schema:
+          type: list
+        required: true
+        description: List of permissions
+    responses:
+      200:
+          description: User permission(s) deleted
+      400:
+          description: Missing or incorrect arguments
+    '''
+    result = initialize_result()
+    ipd = receive_payload(result)
+    check_missing_parms(ipd, ['name', 'permissions'])
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to change user permissions")
+    if type(ipd['permissions']).__name__ != 'list':
+        raise InvalidUsage('Permissions must be specified as a list')
+    result['rest']['row_count'] = 0
+    user_id = get_user_id(ipd['name'])
+    for permission in ipd['permissions']:
+        sql = "DELETE FROM user_permission WHERE user_id=%s AND permission='%s'"
+        try:
+            bind = (user_id, permission)
+            g.c.execute(sql % bind)
+            result['rest']['row_count'] += g.c.rowcount
+            publish_cdc(result, {"table": "user_permission", "operation": "delete"})
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+    g.db.commit()
     return generate_response(result)
 
 
