@@ -106,6 +106,7 @@ __version__ = '0.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
+# Override Flask's usual behavior of sorting keys (interferes with prioritization)
 app.config['JSON_SORT_KEYS'] = False
 SERVER = dict()
 CORS(app)
@@ -874,6 +875,31 @@ def get_task_properties(result):
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
         result['data'].append(task)
+
+
+def add_user_permissions(result, user, permissions):
+    ''' Add permissions for an existing user
+        Keyword arguments:
+          result: result dictionary
+          user: user
+          permissions: list of permissions
+    '''
+    try:
+        g.c.execute("SELECT id FROM user WHERE name='%s'" % user)
+        row = g.c.fetchone()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if 'id' not in row:
+        raise InvalidUsage("User %s was not found" % user, 404)
+    for permission in permissions:
+        try:
+            sql = "INSERT INTO user_permission (user_id,permission) VALUES " \
+                  + "(%s,'%s') ON DUPLICATE KEY UPDATE permission=permission"
+            bind = (row['id'], permission,)
+            g.c.execute(sql % bind)
+            result['rest']['row_count'] += g.c.rowcount
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
 
 
 def publish_kafka(topic, result, message):
@@ -2020,6 +2046,7 @@ def get_projects_eligible():
     '''
     Get eligible projects
     Return a list of projects from which the calling user can genearte assignments.
+    The "calling user" is determined by the JWT.
     ---
     tags:
       - Project
@@ -3108,6 +3135,12 @@ def add_user(): # pragma: no cover
           type: string
         required: true
         description: Janelia ID
+      - in: query
+        name: permissions
+        schema:
+          type: list
+        required: false
+        description: List of permissions
     responses:
       200:
           description: User added
@@ -3134,9 +3167,12 @@ def add_user(): # pragma: no cover
     result['rest']['row_count'] = g.c.rowcount
     result['rest']['inserted_id'] = g.c.lastrowid
     result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_USER'], bind)
+    if 'permissions' in ipd and type(ipd['permissions']).__name__ == 'list':
+        add_user_permissions(result, ipd['name'], ipd['permissions'])
     g.db.commit()
     publish_cdc(result, {"table": "user", "operation": "insert"})
     return generate_response(result)
+
 
 # *****************************************************************************
 
