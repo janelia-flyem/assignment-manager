@@ -27,18 +27,17 @@ docker push registry.int.janelia.org/flyem/assignment-manager
 ## Deployment
 
 After installing on the production server, set up the environment for Docker.
-Rename env_template to .env, and change any calues enclosed in angle brackets.
+Rename env_template to .env, and change any values enclosed in angle brackets.
 
 Take the following steps to start the system:
 ```
 cd /opt/flask/assignment-responder
-docker-compose up -d
-docker run --detach -p 80:8000 registry.int.janelia.org/flyem/assignment-manager
+docker-compose -f docker-compose-prod.yml up -d
 ```
 
 ## Development
-1. Modify api/config.cfg to change MYSQL_DATABASE_HOST
-2. Rebuild the Docker container
+1. Modify api/config.cfg to change MYSQL_DATABASE_HOST as needed
+2. docker-compose up -d
 
 ## Author Information
 Written by Rob Svirskas (<svirskasr@janelia.hhmi.org>)
