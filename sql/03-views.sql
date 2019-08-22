@@ -102,8 +102,8 @@ WHERE cv.id = cvt.cv_id
 ;
 
 CREATE OR REPLACE VIEW project_property_vw AS
-SELECT p.id          AS id
-      ,pp.id           AS project_id
+SELECT pp.id          AS id
+      ,p.id           AS project_id
       ,p.name         AS name
       ,cv.name        AS cv
       ,cv_term.name   AS type
@@ -121,23 +121,26 @@ SELECT
     p.name        AS name,
     ptype.name    AS protocol,
     p.priority    AS priority,
+    p.active      AS active,
     p.disposition AS disposition,
-    pp.value      AS note,
+    grp.value     AS project_group,
+    nt.value      AS note,
     p.create_date AS create_date
 FROM project p
 JOIN cv_term ptype ON (p.protocol_id = ptype.id)
 JOIN cv ptype_cv ON (ptype.cv_id = ptype_cv.id AND ptype_cv.name = 'protocol')
-LEFT OUTER JOIN project_property_vw pp ON (pp.project_id=p.id AND pp.type='note')
+LEFT OUTER JOIN project_property_vw grp ON (grp.project_id=p.id AND grp.type='group')
+LEFT OUTER JOIN project_property_vw nt ON (nt.project_id=p.id AND nt.type='note')
 ;
 
 CREATE OR REPLACE VIEW assignment_property_vw AS
-SELECT ap.id          AS id
-      ,a.id           AS assignment_id
-      ,a.name         AS name
-      ,cv.name        AS cv
-      ,cv_term.name   AS type
-      ,ap.value       AS value
-      ,ap.create_date AS create_date
+SELECT ap.id           AS id
+      ,a.id            AS assignment_id
+      ,a.name          AS name
+      ,cv.name         AS cv
+      ,cv_term.name    AS type
+      ,ap.value        AS value
+      ,ap.create_date  AS create_date
 FROM assignment_property ap
 JOIN assignment a ON (ap.assignment_id = a.id)
 JOIN cv_term ON (ap.type_id = cv_term.id)

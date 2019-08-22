@@ -9,7 +9,7 @@ class Orphan_link:
         self.unit = 'body_id'
         self.cypher_unit = 'bodyId'
         self.allowable_filters = ['post', 'pre', 'size']
-        self.optional_properties = ['roi', 'status', 'note']
+        self.optional_properties = ['roi', 'status', 'note', 'group']
         self.task_insert_props = ['cluster_name', 'post', 'pre', 'status']
 
     def cypher(self, result, ipd):

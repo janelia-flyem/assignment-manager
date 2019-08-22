@@ -102,6 +102,7 @@ CREATE TABLE `project` (
   `disposition` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs,
   `protocol_id` int(10) unsigned NOT NULL,
   `priority` int(10) unsigned NOT NULL DEFAULT 5,
+  `active` tinyint(1) NOT NULL DEFAULT 1,
   `create_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `project_name_uk_ind` (`name`) USING BTREE,

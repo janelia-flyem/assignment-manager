@@ -18,6 +18,7 @@ from flask_cors import CORS
 from flask_swagger import swagger
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
+#import ldap
 import pymysql.cursors
 import pymysql.err
 import requests
@@ -60,9 +61,10 @@ READ = {
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
                         + "assignment_id IS NULL ORDER BY id",
-    'UPSUMMARY': "SELECT protocol,project,COUNT(1) AS num,priority FROM task_vw WHERE "
-                 + "assignment_id IS NULL GROUP BY project,protocol,priority "
-                 + "ORDER BY priority,protocol,project",
+    'UPSUMMARY': "SELECT t.protocol,p.project_group,t.project,p.active,COUNT(1) AS num,t.priority "
+                 + "FROM task_vw t JOIN project_vw p ON (p.id=t.project_id) WHERE "
+                 + "assignment_id IS NULL GROUP BY t.project,p.project_group,t.protocol,t.priority "
+                 + "ORDER BY t.priority,t.protocol,p.project_group,t.project",
 }
 WRITE = {
     'ASSIGN_TASK': "UPDATE task SET assignment_id=%s,user=%s WHERE assignment_id IS NULL AND id=%s",
@@ -102,7 +104,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.4.3'
+__version__ = '0.4.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1003,6 +1005,19 @@ def handle_invalid_usage(error):
 # *****************************************************************************
 # * Web content                                                               *
 # *****************************************************************************
+#@app.route('/login', methods=['GET', 'POST', 'OPTIONS'])
+#ef login():
+#    error = None
+#    if request.method == 'POST':
+#        l = ldap.initialize("ldap://hqdc1.hhmi.org")
+#        try:
+#            l.simple_bind_s(request.form['username'], request.form['password'])
+#            return
+#        except Exception as err:
+#           error = 'Invalid'
+#    return render_template('login.html', error=error)
+
+
 @app.route('/web')
 def show_summary():
     ''' Default route
@@ -1041,15 +1056,18 @@ def show_summary():
         unassigned = '''
         <table id="unassigned" class="tablesorter standard">
         <thead>
-        <tr><th>Project</th><th>Protocol</th><th>Tasks</th><th>Priority</th></tr>
+        <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Priority</th><th>Active</th></tr>
         </thead>
         <tbody>
         '''
-        template = "<tr>" + ''.join("<td>%s</td>")*2 \
-                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+        template = "<tr>" + ''.join("<td>%s</td>")*3 \
+                   + ''.join('<td style="text-align: center">%s</td>')*3 + "</tr>"
         for row in rows:
             proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
-            unassigned += template % (proj, row['protocol'], row['num'], row['priority'])
+            active = "<span style='color:%s'>%s</span>" \
+                     % (('lime', 'YES') if row['active'] else ('red', 'NO'))
+            unassigned += template % (row['protocol'], row['project_group'], proj,
+                                      row['num'], row['priority'], active)
         unassigned += "</tbody></table>"
     else:
         unassigned = "There are no projects with unassigned tasks"
@@ -1067,6 +1085,9 @@ def show_project(pname):
     except Exception as err:
         print(err)
     pprops = []
+    active = "<span style='color:%s'>%s</span>" \
+             % (('lime', 'YES') if project['active'] else ('red', 'NO'))
+    pprops.append(['Active:', active])
     pprops.append(['Protocol:', project['protocol']])
     pprops.append(['Priority:', project['priority']])
     try:
@@ -2023,6 +2044,12 @@ def process_project(protocol):
         required: false
         description: project priority (defaults to 5)
       - in: query
+        name: group
+        schema:
+          type: string
+        required: false
+        description: project group
+      - in: query
         name: note
         schema:
           type: string
@@ -2092,7 +2119,7 @@ def get_projects_eligible():
         raise InvalidUsage(sql_error(err), 500)
     result['projects'] = dict()
     for row in rows:
-        if row['protocol'] in permissions:
+        if row['protocol'] in permissions and row['active']:
             result['projects'][row['project']] = row['protocol']
     if not result['projects']:
         raise InvalidUsage('No eligible projects', 404)
