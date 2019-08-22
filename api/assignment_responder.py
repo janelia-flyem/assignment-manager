@@ -104,7 +104,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.4.4'
+__version__ = '0.4.5'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -544,6 +544,28 @@ def get_project_by_name_or_id(proj):
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     return project
+
+
+def change_project_active(result, name, flag):
+    ''' Change a project's active flag
+        Keyword arguments:
+          result: result dictionary
+          name: project name
+          flag: 1 or 0 (activate or deactivate)
+    '''
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to create projects")
+    if not get_project_by_name_or_id(name):
+        raise InvalidUsage("Project %s does not exist" % name, 404)
+    stmt = "UPDATE project SET active=%s WHERE name='%s'"
+    bind = (flag, name)
+    try:
+        g.c.execute(stmt % bind)
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    result['rest']['row_count'] = g.c.rowcount
+    result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
+    g.db.commit()
 
 
 def get_unassigned_project_tasks(ipd, project_id, num_tasks):
@@ -2009,6 +2031,48 @@ def get_projectprop_info():
     '''
     result = initialize_result()
     execute_sql(result, 'SELECT * FROM project_property_vw', 'data')
+    return generate_response(result)
+
+
+@app.route('/project/activate/<string:name>', methods=['OPTIONS', 'POST'])
+def activate_project(name):
+    '''
+    Activate a project
+    Set a project's active flag to True.
+    ---
+    tags:
+      - Project
+    parameters:
+      - in: path
+        name: name
+        schema:
+          type: string
+        required: true
+        description: project name
+    '''
+    result = initialize_result()
+    change_project_active(result, name, 1)
+    return generate_response(result)
+
+
+@app.route('/project/deactivate/<string:name>', methods=['OPTIONS', 'POST'])
+def deactivate_project(name):
+    '''
+    Deactivate a project
+    Set a project's active flag to False.
+    ---
+    tags:
+      - Project
+    parameters:
+      - in: path
+        name: name
+        schema:
+          type: string
+        required: true
+        description: project name
+    '''
+    result = initialize_result()
+    change_project_active(result, name, 0)
     return generate_response(result)
 
 
