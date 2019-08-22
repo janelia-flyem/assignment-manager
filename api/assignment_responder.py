@@ -102,7 +102,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.4.2'
+__version__ = '0.4.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -207,13 +207,22 @@ def initialize_result():
                        'elapsed_time': '',
                        'row_count': 0,
                        'pid': os.getpid()}}
-    if 'Authorization' in  request.headers:
+    if 'Authorization' in request.headers:
         token = re.sub(r'Bearer\s+', '', request.headers['Authorization'])
         dtok = dict()
         assignment_utilities.BEARER = token
-        dtok = call_profile(token)
-        result['rest']['user'] = dtok['ImageURL']
-        app.config['USERS'][dtok['ImageURL']] = app.config['USERS'].get(dtok['ImageURL'], 0) + 1
+        if token in app.config['AUTHORIZED']:
+            authuser = app.config['AUTHORIZED'][token]
+        else:
+            dtok = call_profile(token)
+            if not dtok or 'ImageURL' not in dtok:
+                raise InvalidUsage('Invalid token used for authorization', 401)
+            authuser = dtok['ImageURL']
+            if not get_user_id(authuser):
+                raise InvalidUsage('User %s is not known to the assignment_manager' % authuser)
+            app.config['AUTHORIZED'][token] = authuser
+        result['rest']['user'] = authuser
+        app.config['USERS'][authuser] = app.config['USERS'].get(authuser, 0) + 1
     elif request.method in ['DELETE', 'POST'] or request.endpoint in app.config['REQUIRE_AUTH']:
         raise InvalidUsage('You must authorize to use this endpoint', 401)
     if app.config['LAST_TRANSACTION'] and time() - app.config['LAST_TRANSACTION'] \
@@ -870,10 +879,10 @@ def get_task_properties(result):
         try:
             g.c.execute("SELECT type,value FROM task_property_vw WHERE task_id=%s", task['id'])
             rows = g.c.fetchall()
-            for row in rows:
-                task['properties'][row['type']] = row['value']
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
+        for row in rows:
+            task['properties'][row['type']] = row['value']
         result['data'].append(task)
 
 
@@ -887,7 +896,7 @@ def get_user_id(user):
         row = g.c.fetchone()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    if 'id' not in row:
+    if not row or 'id' not in row:
         raise InvalidUsage("User %s was not found" % user, 404)
     return row['id']
 
