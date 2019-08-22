@@ -20,9 +20,10 @@ onload="tableInitialize();"
   </table>
   <br>
   <h2>Tasks</h2>
+  Durations in <span style='color:orange'>orange</span> are elapsed time since task start.
   <table id="tasks" class="tablesorter standard">
   <thead>
-  <tr><th>ID</th><th>{{ key_type }}</th><th>Created</th><th>Disposition</th><th>Started</th><th>Completed</th></tr>
+  <tr><th>ID</th><th>{{ key_type }}</th><th>Created</th><th>Disposition</th><th>Started</th><th>Completed</th><th>Duration</th></tr>
   </thead>
   <tbody>
   {% for row in taskrows %}
@@ -33,6 +34,7 @@ onload="tableInitialize();"
       <td style="text-align: center">{{ row[3] }}</td>
       <td style="text-align: center">{{ row[4] }}</td>
       <td style="text-align: center">{{ row[5] }}</td>
+      <td style="text-align: center">{{ row[6]|safe }}</td>
     </tr>
   {% endfor %}
   </tbody>

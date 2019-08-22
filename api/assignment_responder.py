@@ -102,7 +102,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.4.1'
+__version__ = '0.4.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1130,7 +1130,8 @@ def show_assignment(aname):
             aprops.append([show, assignment[prop]])
     try:
         g.c.execute("SELECT key_type,id,key_text,create_date,start_date,"
-                    + "completion_date,disposition FROM task_vw WHERE "
+                    + "completion_date,disposition,SEC_TO_TIME(duration) AS duration,"
+                    + "TIMEDIFF(NOW(),start_date) AS elapsed FROM task_vw WHERE "
                     + "assignment='%s' ORDER BY id" % (aname,))
         rows = g.c.fetchall()
     except Exception as err:
@@ -1148,8 +1149,13 @@ def show_assignment(aname):
                     key_type = display['display_name']
             except Exception as err:
                 print(err)
+        duration = ''
+        if row['duration']:
+            duration = row['duration']
+        elif row['start_date']:
+            duration = "<span style='color:orange'>%s</span>" % row['elapsed']
         trows.append([row['id'], row['key_text'], row['create_date'], row['disposition'],
-                      row['start_date'], row['completion_date']])
+                      row['start_date'], row['completion_date'], duration])
     return render_template('assignment.html', urlroot=request.url_root,
                            assignment=aname, aprops=aprops,
                            key_type=key_type, taskrows=trows)
