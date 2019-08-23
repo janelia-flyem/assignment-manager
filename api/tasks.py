@@ -6,8 +6,8 @@ from assignment_utilities import InvalidUsage, sql_error, update_property
 WRITE = {
     'INSERT_TASK': "INSERT INTO task (name,project_id,key_type_id,key_text,"
                    + "user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s)",
-    'TASK_AUDIT': "INSERT INTO task_audit (project_id,assignment_id,key_type_id,key_text,"
-                  + "disposition,user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s,%s)",
+    'TASK_AUDIT': "INSERT INTO task_audit (task_id,project_id,assignment_id,key_type_id,key_text,"
+                  + "disposition,user) VALUES (%s,%s,%s,getCvTermId('key',%s,NULL),%s,%s,%s)",
     'TASK_PROP' : "INSERT INTO task_property (task_id,type_id,value) VALUES "
                   + "(%s,getCvTermId('task',%s,NULL),%s) ON DUPLICATE KEY UPDATE value=%s"
 }
@@ -25,14 +25,16 @@ def generate_tasks(result, key_type, task_insert_props, existing_project):
     #key_type = projectins.unit
     ignored = inserted = 0
     existing_task = dict()
+    existing_task_id = dict()
     project_id = result['rest']['inserted_id']
     if existing_project:
         # Find existing tasks and put them in the existing_task dictionary
         try:
-            g.c.execute("SELECT assignment_id,key_text FROM task WHERE project_id=%s", (project_id))
+            g.c.execute("SELECT id,assignment_id,key_text FROM task WHERE project_id=%s", (project_id))
             existing = g.c.fetchall()
             for extask in existing:
                 existing_task[extask['key_text']] = extask['assignment_id']
+                existing_task_id[extask['key_text']] = extask['id']
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
     insert_list = []
@@ -73,9 +75,9 @@ def generate_tasks(result, key_type, task_insert_props, existing_project):
         if key in query_task:
             operation = 'update'
             if key in inserted_key:
-                bind = (project_id, None, key_type, key,
-                        'Inserted', result['rest']['user'])
-                audit_list.append(bind)
+                #bind = (existing_task_id[key], project_id, None, key_type, key,
+                #        'Inserted', result['rest']['user'])
+                #audit_list.append(bind)
                 operation = 'insert'
             for prop in task_insert_props:
                 if prop in query_task[key]:
@@ -90,11 +92,11 @@ def generate_tasks(result, key_type, task_insert_props, existing_project):
             result['rest']['row_count'] += g.c.rowcount
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
-        try:
-            g.c.executemany(WRITE['TASK_AUDIT'], audit_list)
-            result['rest']['row_count'] += g.c.rowcount
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
+        #try:
+        #    g.c.executemany(WRITE['TASK_AUDIT'], audit_list)
+        #    result['rest']['row_count'] += g.c.rowcount
+        #except Exception as err:
+        #    raise InvalidUsage(sql_error(err), 500)
     result['rest']['elapsed_task_generation'] = str(datetime.now() - perfstart)
     if ignored:
         result['rest']['tasks_skipped'] = ignored
@@ -171,9 +173,9 @@ def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, result)
         bind = (project_id, None, key_type,
                 key, 'Inserted', result['rest']['user'])
         insert_list.append(bind)
-    if insert_list:
-        try:
-            g.c.executemany(WRITE['TASK_AUDIT'], insert_list)
-            result['rest']['row_count'] += g.c.rowcount
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
+    #if insert_list:
+        #try:
+        #    g.c.executemany(WRITE['TASK_AUDIT'], insert_list)
+        #    result['rest']['row_count'] += g.c.rowcount
+        #except Exception as err:
+        #    raise InvalidUsage(sql_error(err), 500)

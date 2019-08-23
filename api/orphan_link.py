@@ -12,7 +12,7 @@ class Orphan_link:
         self.optional_properties = ['roi', 'status', 'note', 'group']
         self.task_insert_props = ['cluster_name', 'post', 'pre', 'status']
 
-    def cypher(self, result, ipd):
+    def cypher(self, result, ipd, source):
         '''
         Given an optional ROI and status, generate the Cypher query
         '''
@@ -33,7 +33,7 @@ class Orphan_link:
             status_clause = '(' + ' OR '.join(clause_list) + ')'
         else:
             ipd['status'] = ''
-        payload = {"cypher" : "MATCH (n:`hemibrain-Neuron`) WHERE " + roi_clause \
+        payload = {"cypher" : "MATCH (n:`" + source + "`) WHERE " + roi_clause \
                    + status_clause + " RETURN n ORDER BY n.size DESC"}
         result['rest']['cypher'] = payload['cypher']
         try:

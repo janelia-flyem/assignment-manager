@@ -12,7 +12,7 @@ class Cleave:
         self.optional_properties = ['size', 'roi', 'status', 'note', 'group']
         self.task_insert_props = ['cluster_name', 'post', 'pre', 'status']
 
-    def cypher(self, result, ipd):
+    def cypher(self, result, ipd, source):
         '''
         Given a size, and optional ROI and status, generate the Cypher query
         '''
@@ -39,7 +39,7 @@ class Cleave:
         else:
             ipd['status'] = ''
         where_clause = roi_clause + status_clause
-        payload = {"cypher" : "MATCH (n:`hemibrain-Neuron`) WHERE " + size_clause \
+        payload = {"cypher" : "MATCH (n:`" + source + "`) WHERE " + size_clause \
                    + where_clause + " RETURN n ORDER BY n.size DESC"}
         result['rest']['cypher'] = payload['cypher']
         try:

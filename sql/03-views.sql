@@ -148,18 +148,18 @@ JOIN cv ON (cv_term.cv_id = cv.id)
 ;
 
 CREATE OR REPLACE VIEW assignment_vw AS
-SELECT 
-    a.id               AS id,
-    a.name             AS name,
-    p.name             AS project,
-    p.protocol         AS protocol,
-    ap.value           AS note,
-    a.disposition      AS disposition,
-    a.user             AS user,
-    a.start_date       AS start_date,
-    a.completion_date  AS completion_date,
-    a.duration         AS duration,
-    a.working_duration AS working_duration,
+SELECT
+    a.id                            AS id,
+    a.name                          AS name,
+    p.name                          AS project,
+    p.protocol                      AS protocol,
+    ap.value                        AS note,
+    a.disposition                   AS disposition,
+    a.user                          AS user,
+    a.start_date                    AS start_date,
+    a.completion_date               AS completion_date,
+    SEC_TO_TIME(a.duration)         AS duration,
+    SEC_TO_TIME(a.working_duration) AS working_duration,
     a.create_date      AS create_date
 FROM assignment a
 JOIN project_vw p ON (p.id = a.project_id)
@@ -182,25 +182,26 @@ JOIN cv ON (cv_term.cv_id = cv.id)
 
 CREATE OR REPLACE VIEW task_vw AS
 SELECT 
-    t.id               AS id,
-    t.name             AS name,
-    p.name             AS project,
-    t.project_id       AS project_id,
-    a.name             AS assignment,
-    p.protocol         AS protocol,
-    p.priority         AS priority,
-    t.assignment_id    AS assignment_id,
-    t.key_type_id      AS key_type_id,
-    ktype.name         AS key_type,
-    t.key_text         AS key_text,
-    tp.value           AS note,
-    t.disposition      AS disposition,
-    t.user             AS user,
-    t.start_date       AS start_date,
-    t.completion_date  AS completion_date,
-    t.duration         AS duration,
-    t.working_duration AS working_duration,
-    t.create_date      AS create_date
+    t.id                            AS id,
+    t.name                          AS name,
+    p.name                          AS project,
+    t.project_id                    AS project_id,
+    a.name                          AS assignment,
+    p.protocol                      AS protocol,
+    p.priority                      AS priority,
+    t.assignment_id                 AS assignment_id,
+    t.key_type_id                   AS key_type_id,
+    ktype.name                      AS key_type,
+    ktype.display_name              AS key_type_display,
+    t.key_text                      AS key_text,
+    tp.value                        AS note,
+    t.disposition                   AS disposition,
+    t.user                          AS user,
+    t.start_date                    AS start_date,
+    t.completion_date               AS completion_date,
+    SEC_TO_TIME(t.duration)         AS duration,
+    SEC_TO_TIME(t.working_duration) AS working_duration,
+    t.create_date                   AS create_date
 FROM task t
 JOIN project_vw p ON (p.id = t.project_id)
 LEFT OUTER JOIN assignment a ON (a.id = t.assignment_id)
@@ -218,6 +219,7 @@ SELECT
     a.name             AS assignment,
     t.assignment_id    AS assignment_id,
     ktype.name         AS key_type,
+    ktype.display_name AS key_type_display,
     t.key_text         AS key_text,
     tp.value           AS note,
     t.disposition      AS disposition,
@@ -245,6 +247,7 @@ SELECT
     a.name             AS assignment,
     t.assignment_id    AS assignment_id,
     ktype.name         AS key_type,
+    ktype.display_name AS key_type_display,
     t.key_text         AS key_text,
     tp.value           AS note,
     t.disposition      AS disposition,
@@ -270,6 +273,7 @@ SELECT
     p.name             AS project,
     t.project_id       AS project_id,
     ktype.name         AS key_type,
+    ktype.display_name AS key_type_display,
     t.key_text         AS key_text,
     tp2.value          AS todo_type,
     tp3.value          AS priority,
@@ -294,6 +298,7 @@ WHERE p.protocol='todo'
 CREATE OR REPLACE VIEW task_audit_vw AS
 SELECT 
     t.id               AS id,
+    t.task_id          AS task_id,
     p.name             AS project,
     t.project_id       AS project_id,
     a.name             AS assignment,

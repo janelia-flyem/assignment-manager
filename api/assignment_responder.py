@@ -39,7 +39,7 @@ from tasks import create_tasks_from_json, generate_tasks
 READ = {
     'ASSIGNMENT': "SELECT * FROM assignment_vw WHERE id=%s",
     'ASSIGNMENTN': "SELECT a.*,CONCAT(first,' ',last) AS user2 FROM assignment_vw a "
-                   + "JOIN user u ON (u.name=a.user) WHERE a.name='%s'",
+                   + "JOIN user u ON (u.name=a.user) WHERE a.name=%s",
     'CVREL': "SELECT subject,relationship,object FROM cv_relationship_vw "
              + "WHERE subject_id=%s OR object_id=%s",
     'CVTERMREL': "SELECT subject,relationship,object FROM "
@@ -84,8 +84,8 @@ WRITE = {
                    + "VALUES (%s,%s,%s,%s,%s,%s)",
     'START_TASK': "UPDATE task SET start_date=NOW(),disposition=%s,user=%s WHERE id=%s "
                   + "AND start_date IS NULL",
-    'TASK_AUDIT': "INSERT INTO task_audit (project_id,assignment_id,key_type_id,key_text,"
-                  + "disposition,user) VALUES (%s,%s,getCvTermId('key',%s,NULL),%s,%s,%s)",
+    'TASK_AUDIT': "INSERT INTO task_audit (task_id,project_id,assignment_id,key_type_id,key_text,"
+                  + "disposition,user) VALUES (%s,%s,%s,getCvTermId('key',%s,NULL),%s,%s,%s)",
 }
 
 # pylint: disable=C0302,C0103,W0703
@@ -104,7 +104,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.4.5'
+__version__ = '0.4.6'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -426,7 +426,7 @@ def query_neuprint(projectins, result, ipd):
           ipd: request payload
     '''
     try:
-        response = projectins.cypher(result, ipd)
+        response = projectins.cypher(result, ipd, app.config['NEUPRINT_SOURCE'])
     except AssertionError as err:
         raise InvalidUsage(err.args[0])
     except Exception as err:
@@ -661,7 +661,7 @@ def generate_assignment(ipd, result):
             result['rest']['row_count'] += g.c.rowcount
             updated += 1
             publish_cdc(result, {"table": "assignment", "operation": "update"})
-            bind = (project['id'], result['rest']['inserted_id'], projectins.unit,
+            bind = (str(task['id']), project['id'], result['rest']['inserted_id'], projectins.unit,
                     task['key_text'], 'Assigned', assignment_user)
             g.c.execute(WRITE['TASK_AUDIT'], bind)
             if updated >= num_tasks:
@@ -780,7 +780,7 @@ def add_point(ipd, key, result):
           ipd: request payload
           result: result dictionary
     '''
-    payload = {"cypher" : "MATCH (n :`hemibrain-Neuron` {bodyId: "
+    payload = {"cypher" : "MATCH (n :`" + app.config['NEUPRINT_SOURCE'] + "` {bodyId: "
                           + str(key) + "})-[:Contains]->(ss :SynapseSet)-[:Contains]->(s :Synapse) "
                           + "RETURN s.location LIMIT 1"}
     result['rest']['cypher'] = payload['cypher']
@@ -827,8 +827,8 @@ def start_task(ipd, result):
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(WRITE['START_TASK'], bind)
         publish_cdc(result, {"table": "task", "operation": "update"})
-        bind = (task['project_id'], task['assignment_id'], task['key_type'], task['key_text'],
-                'In progress', task['user'])
+        bind = (ipd['id'], task['project_id'], task['assignment_id'], task['key_type'],
+                task['key_text'], 'In progress', task['user'])
         g.c.execute(WRITE['TASK_AUDIT'], bind)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
@@ -878,8 +878,8 @@ def complete_task(ipd, result):
         publish_cdc(result, {"table": "task", "operation": "update"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    bind = (task['project_id'], task['assignment_id'], task['key_type'], task['key_text'],
-            disposition, task['user'])
+    bind = (ipd['id'], task['project_id'], task['assignment_id'], task['key_type'],
+            task['key_text'], disposition, task['user'])
     g.c.execute(WRITE['TASK_AUDIT'], bind)
     for parm in projectins.optional_properties:
         if parm in ipd:
@@ -1048,7 +1048,8 @@ def show_summary():
         g.c.execute("SELECT * FROM project_stats_vw")
         rows = g.c.fetchall()
     except Exception as err:
-        print(err)
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
     if rows:
         assignments = """
         <table id="assignments" class="tablesorter standard">
@@ -1073,7 +1074,8 @@ def show_summary():
         g.c.execute(READ['UPSUMMARY'])
         rows = g.c.fetchall()
     except Exception as err:
-        print(err)
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
     if rows:
         unassigned = '''
         <table id="unassigned" class="tablesorter standard">
@@ -1102,10 +1104,11 @@ def show_project(pname):
     ''' Show information for a project
     '''
     try:
-        g.c.execute("SELECT * FROM project_vw WHERE name='%s'" % (pname,))
+        g.c.execute("SELECT * FROM project_vw WHERE name=%s", (pname,))
         project = g.c.fetchone()
     except Exception as err:
-        print(err)
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
     pprops = []
     active = "<span style='color:%s'>%s</span>" \
              % (('lime', 'YES') if project['active'] else ('red', 'NO'))
@@ -1113,10 +1116,11 @@ def show_project(pname):
     pprops.append(['Protocol:', project['protocol']])
     pprops.append(['Priority:', project['priority']])
     try:
-        g.c.execute("SELECT type,value FROM project_property_vw WHERE name='%s'" % (pname,))
+        g.c.execute("SELECT type,value FROM project_property_vw WHERE name=%s ORDER BY 1", (pname,))
         props = g.c.fetchall()
     except Exception as err:
-        print(err)
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
     for prop in props:
         if not prop['value']:
             continue
@@ -1128,7 +1132,8 @@ def show_project(pname):
         g.c.execute(READ['PROJECTA'] % (pname,))
         tasks = g.c.fetchall()
     except Exception as err:
-        print(err)
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
     num_assigned = 0
     if tasks:
         assigned = '''
@@ -1150,7 +1155,8 @@ def show_project(pname):
         g.c.execute(READ['PROJECTUA'] % (pname,))
         tasks = g.c.fetchone()
     except Exception as err:
-        print(err)
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
     num_unassigned = tasks['num'] if tasks else 0
     num_tasks = num_assigned + num_unassigned
     num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
@@ -1166,10 +1172,14 @@ def show_assignment(aname):
     ''' Show information for an assignment
     '''
     try:
-        g.c.execute(READ['ASSIGNMENTN'] % (aname,))
+        g.c.execute(READ['ASSIGNMENTN'], (aname,))
         assignment = g.c.fetchone()
     except Exception as err:
-        print(err)
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    if not assignment:
+        return render_template('error.html', urlroot=request.url_root,
+                               message='Assignment %s was not found' % aname)
     aprops = []
     for prop in ['project', 'protocol', 'user2', 'disposition', 'start_date',
                  'completion_date', 'duration', 'working_duration', 'note']:
@@ -1182,35 +1192,73 @@ def show_assignment(aname):
             aprops.append([show, assignment[prop]])
     try:
         g.c.execute("SELECT key_type,id,key_text,create_date,start_date,"
-                    + "completion_date,disposition,SEC_TO_TIME(duration) AS duration,"
+                    + "completion_date,disposition,duration,"
                     + "TIMEDIFF(NOW(),start_date) AS elapsed FROM task_vw WHERE "
-                    + "assignment='%s' ORDER BY id" % (aname,))
+                    + "assignment=%s ORDER BY id", (aname,))
         rows = g.c.fetchall()
     except Exception as err:
-        print(err)
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
     trows = []
-    key_type = None
+    key_type = rows[0]['key_type']
     for row in rows:
-        if not key_type:
-            key_type = row['key_type']
-            try:
-                g.c.execute("SELECT display_name FROM cv_term_vw WHERE "
-                            + "cv='key' AND cv_term='%s'" % (key_type))
-                display = g.c.fetchone()
-                if display:
-                    key_type = display['display_name']
-            except Exception as err:
-                print(err)
         duration = ''
         if row['duration']:
             duration = row['duration']
         elif row['start_date']:
             duration = "<span style='color:orange'>%s</span>" % row['elapsed']
-        trows.append([row['id'], row['key_text'], row['create_date'], row['disposition'],
+        id_link = '<a href="/web/task/%s">%s</a>' % (row['id'], row['id'])
+        trows.append([id_link, row['key_text'], row['create_date'], row['disposition'],
                       row['start_date'], row['completion_date'], duration])
     return render_template('assignment.html', urlroot=request.url_root,
                            assignment=aname, aprops=aprops,
                            key_type=key_type, taskrows=trows)
+
+
+@app.route('/web/task/<string:task_id>')
+def show_task(task_id):
+    ''' Show information for a task
+    '''
+    try:
+        g.c.execute("SELECT * FROM task_vw WHERE id=%s" % (task_id,))
+        task = g.c.fetchone()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    tprops = []
+    tprops.append(['Project:', task['project']])
+    tprops.append(['Protocol:', task['protocol']])
+    tprops.append(['Assignment:', task['assignment']])
+    tprops.append([task['key_type'] + ':', task['key_text']])
+    tprops.append(['Create date:', task['create_date']])
+    tprops.append(['Start date:', task['start_date']])
+    tprops.append(['Completion date:', task['completion_date']])
+    tprops.append(['Duration:', task['duration']])
+    tprops.append(['Working duration:', task['working_duration']])
+    try:
+        g.c.execute("SELECT type,value FROM task_property_vw WHERE task_id=%s ORDER BY 1"
+                    % (task_id,))
+        props = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    for prop in props:
+        if not prop['value']:
+            continue
+        show = prop['type'].replace('_', ' ').capitalize() + ':'
+        tprops.append([show, prop['value']])
+    try:
+        g.c.execute("SELECT disposition,user,create_date  FROM task_audit_vw WHERE "
+                    + "task_id=%s ORDER BY 3" % (task_id))
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    audit = []
+    for row in rows:
+        audit.append([row['disposition'], row['user'], row['create_date']])
+    return render_template('task.html', urlroot=request.url_root,
+                           task=task_id, tprops=tprops, audit=audit)
 
 
 # *****************************************************************************
@@ -2603,8 +2651,8 @@ def delete_assignment(assignment_id):
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
         for task in tasks:
-            bind = (task['project_id'], assignment_id, task['key_type'], task['key_text'],
-                    'Unassigned', task['user'])
+            bind = (g.c.lastrowid, task['project_id'], assignment_id, task['key_type'],
+                    task['key_text'], 'Unassigned', task['user'])
             g.c.execute(WRITE['TASK_AUDIT'], bind)
         g.c.execute("DELETE from assignment WHERE id=%s", (assignment_id))
         result['rest']['row_count'] += g.c.rowcount
@@ -3365,10 +3413,10 @@ def delete_user_permission(): # pragma: no cover
     result['rest']['row_count'] = 0
     user_id = get_user_id(ipd['name'])
     for permission in ipd['permissions']:
-        sql = "DELETE FROM user_permission WHERE user_id=%s AND permission='%s'"
+        sql = "DELETE FROM user_permission WHERE user_id=%s AND permission=%s"
         try:
             bind = (user_id, permission)
-            g.c.execute(sql % bind)
+            g.c.execute(sql, bind)
             result['rest']['row_count'] += g.c.rowcount
             publish_cdc(result, {"table": "user_permission", "operation": "delete"})
         except Exception as err:

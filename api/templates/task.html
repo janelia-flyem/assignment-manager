@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="#">Project</a></li>
+{% endblock %}
+{% block css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
+{% endblock %}
+{% block onload %}
+onload="tableInitialize();"
+{% endblock %}
+
+{% block content %}
+  <h3>Task {{ task }}</h3>
+  <table id='taskprops'>
+  <tbody>
+  {% for row in tprops %}
+    <tr><td>{{ row[0] }}</td><td>{{ row[1]|safe }}</td></tr>
+  {% endfor %}
+  </tbody>
+  </table>
+  <br>
+  <h3>Audit trail</h3>
+  <table id='taskaudit' class="tablesorter standard">
+  <thead>
+  <tr><th>Action</th><th>User</th><th>Date</th></tr>
+  </thead>
+  <tbody>
+  {% for row in audit %}
+    <tr><td>{{ row[0] }}</td><td>{{ row[1] }}</td><td>{{ row[2] }}</td></tr>
+  {% endfor %}
+  </tbody>
+  </table>
+{% endblock %}
