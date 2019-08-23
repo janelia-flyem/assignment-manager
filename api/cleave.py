@@ -1,8 +1,13 @@
-from assignment_utilities import call_responder
+''' Cleave protocol
+'''
+
 from datetime import datetime
+from assignment_utilities import call_responder
 
 class Cleave:
-
+    '''
+    Cleave protocol object
+    '''
     def __init__(self):
         self.num_tasks = 100
         self.task_populate_method = 'query_neuprint'
@@ -12,9 +17,15 @@ class Cleave:
         self.optional_properties = ['size', 'roi', 'status', 'note', 'group']
         self.task_insert_props = ['cluster_name', 'post', 'pre', 'status']
 
+
     def cypher(self, result, ipd, source):
         '''
         Given a size, and optional ROI and status, generate the Cypher query
+        Keyword arguments:
+          self: object
+          result: result dictionary
+          ipd: input parameters
+          source: neuprint source
         '''
         perfstart = datetime.now()
         assert 'size' in ipd and ipd['size'], \
@@ -29,7 +40,8 @@ class Cleave:
             roi_clause = ' AND (' + ' OR '.join(clause_list) + ')'
         else:
             ipd['roi'] = ''
-        status_clause = " AND (n.status=\"0.5assign\" OR n.status=\"Leaves\" OR NOT EXISTS(n.status))"
+        status_clause = " AND (n.status=\"0.5assign\" OR n.status=\"Leaves\" " \
+                        + "OR NOT EXISTS(n.status))"
         if 'status' in ipd:
             in_list = ipd['status'].split(',')
             clause_list = []
