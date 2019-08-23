@@ -17,6 +17,10 @@ table.standard {
   padding: 0 2px 0 2px;
 }
 
+.property td {
+  padding: 0 8px 0 0px;
+}
+
 /* General */
 body {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;

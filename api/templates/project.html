@@ -11,7 +11,7 @@ onload="tableInitialize();"
 
 {% block content %}
   <h3>{{ project }}</h3>
-  <table id='projectprops'>
+  <table id='projectprops' class="property">
   <tbody>
   {% for row in pprops %}
     <tr><td>{{ row[0] }}</td><td>{{ row[1]|safe }}</td></tr>

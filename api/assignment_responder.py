@@ -1191,7 +1191,7 @@ def show_assignment(aname):
                                    % (assignment[prop], assignment[prop])
             aprops.append([show, assignment[prop]])
     try:
-        g.c.execute("SELECT key_type,id,key_text,create_date,start_date,"
+        g.c.execute("SELECT key_type_display,id,key_text,create_date,start_date,"
                     + "completion_date,disposition,duration,"
                     + "TIMEDIFF(NOW(),start_date) AS elapsed FROM task_vw WHERE "
                     + "assignment=%s ORDER BY id", (aname,))
@@ -1200,7 +1200,7 @@ def show_assignment(aname):
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     trows = []
-    key_type = rows[0]['key_type']
+    key_type = rows[0]['key_type_display']
     for row in rows:
         duration = ''
         if row['duration']:
@@ -1229,7 +1229,7 @@ def show_task(task_id):
     tprops.append(['Project:', task['project']])
     tprops.append(['Protocol:', task['protocol']])
     tprops.append(['Assignment:', task['assignment']])
-    tprops.append([task['key_type'] + ':', task['key_text']])
+    tprops.append([task['key_type_display'] + ':', task['key_text']])
     tprops.append(['Create date:', task['create_date']])
     tprops.append(['Start date:', task['start_date']])
     tprops.append(['Completion date:', task['completion_date']])
