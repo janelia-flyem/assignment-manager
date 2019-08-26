@@ -583,7 +583,7 @@ def get_unassigned_project_tasks(ipd, project_id, num_tasks):
         raise InvalidUsage(sql_error(err), 500)
     if not tasks:
         raise InvalidUsage("Project %s has no unassigned tasks" % ipd['project_name'], 404)
-    if len(tasks) < num_tasks:
+    if len(tasks) < num_tasks and not app.config['ALLOW_PARTIAL_ASSIGNMENTS']:
         raise InvalidUsage(("Project %s only has %s unassigned tasks, not %s" \
                             % (ipd['project_name'], len(tasks), num_tasks)), 404)
     return tasks
@@ -654,6 +654,7 @@ def generate_assignment(ipd, result):
             update_property(result['rest']['inserted_id'], 'assignment', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     updated = 0
+    num_tasks = len(tasks)
     for task in tasks:
         try:
             bind = (result['rest']['inserted_id'], assignment_user, task['id'])
