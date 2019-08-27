@@ -104,7 +104,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.4.6'
+__version__ = '0.4.7'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -162,6 +162,7 @@ def before_request():
             mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
             raise InvalidUsage(mess, 500)
         PRODUCER = KafkaProducer(bootstrap_servers=SERVER['Kafka']['broker_list'])
+        assignment_utilities.BEARER = assignment_utilities.CONFIG['neuprint']['bearer']
     START_TIME = time()
     app.config['COUNTER'] += 1
     endpoint = request.endpoint if request.endpoint else '(Unknown)'
@@ -182,10 +183,11 @@ def call_profile(token):
         Keyword arguments:
           token: JWT token
     '''
-    url = assignment_utilities.CONFIG['neuprint']['url'] + 'profile'
-    url = url.replace('/api', '')
+    url = assignment_utilities.CONFIG['neuprint-auth']['url'] + 'profile'
+    # url = url.replace('api/', '')
     headers = {"Content-Type": "application/json",
                "Authorization": "Bearer " + token}
+    print(url)
     try:
         req = requests.get(url, headers=headers)
     except requests.exceptions.RequestException as err: # pragma no cover
@@ -212,7 +214,8 @@ def initialize_result():
     if 'Authorization' in request.headers:
         token = re.sub(r'Bearer\s+', '', request.headers['Authorization'])
         dtok = dict()
-        assignment_utilities.BEARER = token
+        # assignment_utilities.BEARER = token
+        print(token)
         if token in app.config['AUTHORIZED']:
             authuser = app.config['AUTHORIZED'][token]
         else:
@@ -1041,10 +1044,35 @@ def handle_invalid_usage(error):
 #    return render_template('login.html', error=error)
 
 
+@app.route('/login', methods=['GET', 'POST', 'OPTIONS'])
+def log_me_in():
+    ''' Log in
+    '''
+    print("In log_me_in")
+    req = requests.get("https://emdata1.int.janelia.org:15000/api/token/assignment-manager")
+    try:
+        resp = req.json()
+    except Exception as err:
+        temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+        mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+        print(mess)
+        return "https://emdata1.int.janelia.org:15000?redirect=http://10.101.10.216/web"
+    if 'token' in resp:
+        # Decode the token we get back
+        return 0
+    print("Missing token")
+    return "https://emdata1.int.janelia.org:15000/api/token/assignment-manager"
+
+
 @app.route('/web')
 def show_summary():
     ''' Default route
     '''
+    # Are we logged in?
+    #print("Cookie: [%s]" % (request.cookies.get('flyem-services')))
+    #x = log_me_in()
+    #if x:
+    #    return redirect(x)
     try:
         g.c.execute("SELECT * FROM project_stats_vw")
         rows = g.c.fetchall()
@@ -2948,7 +2976,7 @@ def update_task_property(task_id):
     return generate_response(result)
 
 
-@app.route('/eligible_tasks/<string:protocol>', methods=['GET'])
+@app.route('/tasks/eligible/<string:protocol>', methods=['GET'])
 def get_eligible_tasks(protocol):
     '''
     Get eligible tasks for a protocol
