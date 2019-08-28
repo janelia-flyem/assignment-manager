@@ -2,6 +2,17 @@
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="#">Assignment</a></li>
 {% endblock %}
+{% block script %}
+<script>
+function show_all() {
+  $(".open").show();
+  $(".complete").show();
+  $('#hc').removeAttr("disabled");
+  $('#ho').removeAttr("disabled");
+  $('#proofreader').val('all');
+}
+</script>
+{% endblock %}
 {% block css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
 {% endblock %}
@@ -20,23 +31,10 @@ onload="tableInitialize();"
   </table>
   <br>
   <h2>Tasks</h2>
+  <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
+  <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
+  <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button>
+  <br>
   Durations in <span style='color:orange'>orange</span> are elapsed time since task start.
-  <table id="tasks" class="tablesorter standard">
-  <thead>
-  <tr><th>ID</th><th>{{ key_type }}</th><th>Created</th><th>Disposition</th><th>Started</th><th>Completed</th><th>Duration</th></tr>
-  </thead>
-  <tbody>
-  {% for row in taskrows %}
-    <tr>
-      <td style="text-align: center">{{ row[0]|safe }}</td>
-      <td>{{ row[1] }}</td>
-      <td style="text-align: center">{{ row[2] }}</td>
-      <td style="text-align: center">{{ row[3] }}</td>
-      <td style="text-align: center">{{ row[4] }}</td>
-      <td style="text-align: center">{{ row[5] }}</td>
-      <td style="text-align: center">{{ row[6]|safe }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-  </table>
+  {{tasks|safe}}
 {% endblock %}

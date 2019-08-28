@@ -1231,8 +1231,15 @@ def show_assignment(aname):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    trows = []
-    key_type = rows[0]['key_type_display']
+    tasks = """
+    <table id="tasks" class="tablesorter standard">
+    <thead>
+    <tr><th>ID</th><th>%s</th><th>Created</th><th>Disposition</th><th>Started</th><th>Completed</th><th>Duration</th></tr>
+    </thead>
+    <tbody>
+    """
+    tasks = tasks % rows[0]['key_type_display']
+    template = '<tr class="%s">' + ''.join('<td style="text-align: center">%s</td>')*7 + "</tr>"
     for row in rows:
         duration = ''
         if row['duration']:
@@ -1241,11 +1248,11 @@ def show_assignment(aname):
             duration = "<span style='color:orange'>%s</span>" % row['elapsed']
         id_link = '<a href="/web/task/%s">%s</a>' % (row['id'], row['id'])
         rclass = 'complete' if row['completion_date'] else 'open'
-        trows.append([id_link, row['key_text'], row['create_date'], row['disposition'],
-                      row['start_date'], row['completion_date'], duration])
+        tasks += template % (rclass, id_link, row['key_text'], row['create_date'], row['disposition'],
+                             row['start_date'], row['completion_date'], duration)
+    tasks += "</tbody></table>"
     return render_template('assignment.html', urlroot=request.url_root,
-                           assignment=aname, aprops=aprops,
-                           key_type=key_type, taskrows=trows)
+                           assignment=aname, aprops=aprops, tasks=tasks)
 
 
 @app.route('/web/task/<string:task_id>')
