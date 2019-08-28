@@ -1248,8 +1248,9 @@ def show_assignment(aname):
             duration = "<span style='color:orange'>%s</span>" % row['elapsed']
         id_link = '<a href="/web/task/%s">%s</a>' % (row['id'], row['id'])
         rclass = 'complete' if row['completion_date'] else 'open'
-        tasks += template % (rclass, id_link, row['key_text'], row['create_date'], row['disposition'],
-                             row['start_date'], row['completion_date'], duration)
+        tasks += template % (rclass, id_link, row['key_text'], row['create_date'],
+                             row['disposition'], row['start_date'], row['completion_date'],
+                             duration)
     tasks += "</tbody></table>"
     return render_template('assignment.html', urlroot=request.url_root,
                            assignment=aname, aprops=aprops, tasks=tasks)
