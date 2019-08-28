@@ -1077,6 +1077,7 @@ def show_summary():
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
+    proofreaders = dict()
     if rows:
         assignments = """
         <table id="assignments" class="tablesorter standard">
@@ -1087,7 +1088,6 @@ def show_summary():
         """
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*4 \
                    + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
-        proofreaders = dict()
         for row in rows:
             rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
             name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
@@ -1240,6 +1240,7 @@ def show_assignment(aname):
         elif row['start_date']:
             duration = "<span style='color:orange'>%s</span>" % row['elapsed']
         id_link = '<a href="/web/task/%s">%s</a>' % (row['id'], row['id'])
+        rclass = 'complete' if row['completion_date'] else 'open'
         trows.append([id_link, row['key_text'], row['create_date'], row['disposition'],
                       row['start_date'], row['completion_date'], duration])
     return render_template('assignment.html', urlroot=request.url_root,
