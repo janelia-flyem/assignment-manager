@@ -9,6 +9,21 @@ function show_all() {
   $(".complete").show();
   $('#hc').removeAttr("disabled");
   $('#ho').removeAttr("disabled");
+  $('#proofreader').val('all');
+}
+
+function select_proofreader(sel) {
+  selected = sel.value
+  $("#proofreader > option").each(function() {
+    if (selected == 'all' || selected == this.value) {
+      $("."+this.value).show()
+    }
+    else {
+      $("."+this.value).hide()
+    }
+  });
+  $('#hc').removeAttr("disabled");
+  $('#ho').removeAttr("disabled");
 }
 </script>
 {% endblock %}
@@ -17,10 +32,19 @@ onload="tableInitialize();"
 {% endblock %}
 
 {% block content %}
-  <h2>Assignments
+  <h2>Assignments </h2>
+  <div>
   <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
   <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
-  <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button></h2>
+  <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button>
+  Select proofreader:
+  <select id="proofreader" onchange='select_proofreader(this);'>
+    <option value="all" SELECTED>All proofreaders</a>
+    {% for prf in proofreaders %}
+        <option value="{{prf}}">{{proofreaders[prf]}}</option>"
+    {% endfor %}
+  </select>
+  </div>
   {{ assignments|safe }}
   <h2>Projects with unassigned tasks</h2>
   {{ unassigned|safe }}

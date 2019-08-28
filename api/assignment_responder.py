@@ -104,7 +104,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.4.7'
+__version__ = '0.4.8'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -187,12 +187,10 @@ def call_profile(token):
     # url = url.replace('api/', '')
     headers = {"Content-Type": "application/json",
                "Authorization": "Bearer " + token}
-    print(url)
     try:
         req = requests.get(url, headers=headers)
     except requests.exceptions.RequestException as err: # pragma no cover
-        print(err)
-        sys.exit(-1)
+        raise InvalidUsage(err, 500)
     if req.status_code == 200:
         return req.json()
     if req.status_code == 401:
@@ -215,7 +213,6 @@ def initialize_result():
         token = re.sub(r'Bearer\s+', '', request.headers['Authorization'])
         dtok = dict()
         # assignment_utilities.BEARER = token
-        print(token)
         if token in app.config['AUTHORIZED']:
             authuser = app.config['AUTHORIZED'][token]
         else:
@@ -657,7 +654,8 @@ def generate_assignment(ipd, result):
             update_property(result['rest']['inserted_id'], 'assignment', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     updated = 0
-    num_tasks = len(tasks)
+    num_tasks = int(ipd['tasks']) if 'tasks' in ipd else len(tasks)
+    print("Assigned %s to %s" % (ipd['name'], assignment_user))
     for task in tasks:
         try:
             bind = (result['rest']['inserted_id'], assignment_user, task['id'])
@@ -1089,8 +1087,12 @@ def show_summary():
         """
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*4 \
                    + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+        proofreaders = dict()
         for row in rows:
             rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
+            name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
+            rclass += ' ' + name
+            proofreaders[name] = row['proofreader']
             proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
             assn = '<a href="/web/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
             assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
@@ -1125,7 +1127,8 @@ def show_summary():
     else:
         unassigned = "There are no projects with unassigned tasks"
     return render_template('home.html', urlroot=request.url_root,
-                           assignments=assignments, unassigned=unassigned)
+                           assignments=assignments, proofreaders=proofreaders,
+                           unassigned=unassigned)
 
 
 @app.route('/web/project/<string:pname>')
