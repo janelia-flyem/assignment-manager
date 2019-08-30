@@ -21,6 +21,13 @@ table.standard {
   padding: 0 8px 0 0px;
 }
 
+.user_image {
+  padding-right: 5px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+}
+
 /* General */
 body {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;

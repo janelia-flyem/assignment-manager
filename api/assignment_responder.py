@@ -16,6 +16,7 @@ from flask import Flask, g, make_response, redirect, render_template, request, j
 from flask.json import JSONEncoder
 from flask_cors import CORS
 from flask_swagger import swagger
+import jwt
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 import pymysql.cursors
@@ -52,9 +53,10 @@ READ = {
                      + "FIELD(priority,'high','medium','low'),todo_type",
     'GET_ASSOCIATION': "SELECT object FROM cv_term_relationship_vw WHERE "
                        + "subject=%s AND relationship='associated_with'",
-    'PROJECTA': "SELECT CONCAT(first,' ',last) AS user,disposition,COUNT(1) AS num FROM task_vw t "
+    'PROJECTA': "SELECT CONCAT(first,' ',last) AS user,assignment,disposition,COUNT(1) AS num "
+                + "FROM task_vw t "
                 + "JOIN user u ON (u.name=t.user) WHERE project='%s' AND assignment_id IS NOT NULL "
-                + "GROUP BY 1,2",
+                + "GROUP BY 1,2,3",
     'PROJECTUA': "SELECT COUNT(1) AS num FROM task_vw WHERE project='%s' AND assignment_id IS NULL",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
@@ -103,7 +105,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.4.8'
+__version__ = '0.5.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -177,31 +179,29 @@ def before_request():
 # ******************************************************************************
 
 
-def call_profile(token):
-    ''' Get information from a given JWT token
+def decode_token(token):
+    ''' Decode a given JWT token
         Keyword arguments:
           token: JWT token
+        Returns:
+          decoded token JSON
     '''
-    url = assignment_utilities.CONFIG['neuprint-auth']['url'] + 'profile'
-    # url = url.replace('api/', '')
-    headers = {"Content-Type": "application/json",
-               "Authorization": "Bearer " + token}
-    print(url)
-    print(token)
     try:
-        req = requests.get(url, headers=headers)
-    except requests.exceptions.RequestException as err: # pragma no cover
-        raise InvalidUsage(err, 500)
-    if req.status_code == 200:
-        return req.json()
-    if req.status_code == 401:
-        raise InvalidUsage("Please provide a valid Auth Token", 401)
-    raise InvalidUsage("No response from %s" % (url))
+        response = jwt.decode(token, 'k12Z1IwhNfBmIPEXR_T2pK9CF1s', algorithms='HS256')
+    except jwt.ExpiredSignatureError:
+        raise InvalidUsage("token is expired", 401)
+    except jwt.InvalidSignatureError:
+        raise InvalidUsage("Signature verification failed for token", 401)
+    except Exception:
+        raise InvalidUsage("Could not decode token", 500)
+    return response
 
 
 def initialize_result():
     ''' Initialize the result dictionary
         An auth header with a JWT token is required for all POST and DELETE requests
+        Returns:
+          decoded partially populated result dictionary
     '''
     result = {"rest": {'requester': request.remote_addr,
                        'url': request.url,
@@ -217,10 +217,10 @@ def initialize_result():
         if token in app.config['AUTHORIZED']:
             authuser = app.config['AUTHORIZED'][token]
         else:
-            dtok = call_profile(token)
-            if not dtok or 'ImageURL' not in dtok:
+            dtok = decode_token(token)
+            if not dtok or 'email' not in dtok:
                 raise InvalidUsage('Invalid token used for authorization', 401)
-            authuser = dtok['ImageURL']
+            authuser = dtok['email']
             if not get_user_id(authuser):
                 raise InvalidUsage('User %s is not known to the assignment_manager' % authuser)
             #authuser = 'robsvi@gmail.com'
@@ -291,6 +291,8 @@ def get_additional_cv_data(sid):
     ''' Return CV relationships
         Keyword arguments:
           sid: CV ID
+        Returns:
+          fetched CV relationship data
     '''
     sid = str(sid)
     g.c.execute(READ['CVREL'], (sid, sid))
@@ -303,6 +305,8 @@ def get_cv_data(result, cvs):
         Keyword arguments:
           result: result dictionary
           cvs: rows of data from cv table
+        Returns:
+          CV data list
     '''
     result['data'] = []
     try:
@@ -320,6 +324,8 @@ def get_additional_cv_term_data(sid):
     ''' Return CV term relationships
         Keyword arguments:
           sid: CV term ID
+        Returns:
+          fgetched CV term relationship data
     '''
     sid = str(sid)
     g.c.execute(READ['CVTERMREL'], (sid, sid))
@@ -332,6 +338,8 @@ def get_cv_term_data(result, cvterms):
         Keyword arguments:
           result: result dictionary
           cvterms: rows of data from cv table
+        Returns:
+          CV term data list
     '''
     result['data'] = []
     try:
@@ -349,6 +357,8 @@ def generate_response(result):
     ''' Generate a response to a request
         Keyword arguments:
           result: result dictionary
+        Returns:
+          JSON response
     '''
     result['rest']['elapsed_time'] = str(timedelta(seconds=(time() - START_TIME)))
     return jsonify(**result)
@@ -358,6 +368,8 @@ def receive_payload(result):
     ''' Get a request payload (form or JSON).
         Keyword arguments:
           result: result dictionary
+        Returns:
+          payload dictionary
     '''
     pay = dict()
     if not request.get_data():
@@ -796,6 +808,43 @@ def complete_assignment(ipd, result, assignment, incomplete_okay=False):
     publish_kafka('assignment_complete', result, message)
 
 
+def get_all_assignments():
+    ''' Get a list of all assignments and return as a table.
+        Also return a dictionary of proofreaders.
+    '''
+    try:
+        g.c.execute("SELECT * FROM project_stats_vw")
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    proofreaders = dict()
+    if rows:
+        assignments = """
+        <table id="assignments" class="tablesorter standard">
+        <thead>
+        <tr><th>Proofreader</th><th>Project</th><th>Protocol</th><th>Assignment</th><th>Task disposition</th><th>Task count</th></tr>
+        </thead>
+        <tbody>
+        """
+        template = '<tr class="%s">' + ''.join("<td>%s</td>")*4 \
+                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+        for row in rows:
+            rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
+            name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
+            rclass += ' ' + name
+            proofreaders[name] = row['proofreader']
+            proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
+            assn = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
+            assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
+                                       assn, row['task_disposition'],
+                                       row['tasks'])
+        assignments += "</tbody></table>"
+    else:
+        assignments = "There are no open assignments"
+    return proofreaders, assignments
+
+
 def get_task_by_key(pid, key_type, key):
     ''' Get a task by project ID/key type/key
         Keyword arguments:
@@ -1020,6 +1069,34 @@ def add_user_permissions(result, user, permissions):
             raise InvalidUsage(sql_error(err), 500)
 
 
+def get_token():
+    ''' Get the assignment manager token
+    '''
+    url = assignment_utilities.CONFIG['neuprint-auth']['url'] + 'api/token/assignment-manager'
+    # url = url.replace('api/', '')
+    cookies = {'flyem-services': request.cookies.get('flyem-services')}
+    headers = {"Content-Type": "application/json"}
+    try:
+        req = requests.get(url, headers=headers, cookies=cookies)
+    except requests.exceptions.RequestException as err: # pragma no cover
+        raise InvalidUsage(err, 500)
+    if req.status_code == 200:
+        resp = req.json()
+        return resp['token']
+    raise InvalidUsage("No response from %s" % (url))
+
+
+def get_web_profile(token=None):
+    ''' Get the username and picture
+    '''
+    if not token:
+        token = request.cookies.get(app.config['TOKEN'])
+    resp = decode_token(token)
+    user = resp['email']
+    face = '<img class="user_image" src="%s" alt="%s">' % (resp['image-url'], user)
+    return user, face
+
+
 def publish_kafka(topic, result, message):
     ''' Publish a message to Kafka
         Keyword arguments:
@@ -1104,24 +1181,6 @@ def handle_invalid_usage(error):
 # *****************************************************************************
 
 
-def get_token():
-    ''' Get the assignment manager token
-    '''
-    url = assignment_utilities.CONFIG['neuprint-auth']['url'] + 'token'
-    # url = url.replace('api/', '')
-    cookies = {'flyem-services': request.cookies.get('flyem-services')}
-    headers = {"Content-Type": "application/json"}
-    try:
-        req = requests.get(url, headers=headers, cookies=cookies)
-    except requests.exceptions.RequestException as err: # pragma no cover
-        raise InvalidUsage(err, 500)
-    if req.status_code == 200:
-        resp = req.json()
-        print("Got token %s" % resp['token'])
-        return resp['token']
-    raise InvalidUsage("No response from %s" % (url))
-
-
 @app.route('/')
 def show_summary():
     ''' Default route
@@ -1134,36 +1193,10 @@ def show_summary():
                             + "redirect=http://svirskasr-wm2.janelia.org")
     else:
         token = request.cookies.get(app.config['TOKEN'])
-    try:
-        g.c.execute("SELECT * FROM project_stats_vw")
-        rows = g.c.fetchall()
-    except Exception as err:
-        return render_template('error.html', urlroot=request.url_root,
-                               title='SQL error', message=sql_error(err))
-    proofreaders = dict()
-    if rows:
-        assignments = """
-        <table id="assignments" class="tablesorter standard">
-        <thead>
-        <tr><th>Proofreader</th><th>Project</th><th>Protocol</th><th>Assignment</th><th>Task disposition</th><th>Task count</th></tr>
-        </thead>
-        <tbody>
-        """
-        template = '<tr class="%s">' + ''.join("<td>%s</td>")*4 \
-                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
-        for row in rows:
-            rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
-            name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
-            rclass += ' ' + name
-            proofreaders[name] = row['proofreader']
-            proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
-            assn = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
-            assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
-                                       assn, row['task_disposition'],
-                                       row['tasks'])
-        assignments += "</tbody></table>"
-    else:
-        assignments = "There are no open assignments"
+    face = ''
+    if request.cookies.get(app.config['TOKEN']):
+        _, face = get_web_profile()
+    proofreaders, assignments = get_all_assignments()
     try:
         g.c.execute(READ['UPSUMMARY'])
         rows = g.c.fetchall()
@@ -1189,7 +1222,7 @@ def show_summary():
         unassigned += "</tbody></table>"
     else:
         unassigned = "There are no projects with unassigned tasks"
-    response = make_response(render_template('home.html', urlroot=request.url_root,
+    response = make_response(render_template('home.html', urlroot=request.url_root, face=face,
                                              assignments=assignments, proofreaders=proofreaders,
                                              unassigned=unassigned))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
@@ -1200,6 +1233,10 @@ def show_summary():
 def show_project(pname):
     ''' Show information for a project
     '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=http://svirskasr-wm2.janelia.org")
+    user, face = get_web_profile()
     try:
         g.c.execute("SELECT * FROM project_vw WHERE name=%s", (pname,))
         project = g.c.fetchone()
@@ -1207,15 +1244,17 @@ def show_project(pname):
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     pprops = get_project_properties(project)
-    if project['active']:
-        controls = '''
-        <button type="button" class="btn btn-danger btn-sm" onclick='modify_project(%s,"suspended");'>Suspend project</button>
-        '''
-    else:
-        controls = '''
-        <button type="button" class="btn btn-success btn-sm" onclick='modify_project(%s,"activated");'>Activate project</button>
-        '''
-    controls = controls % (project['id'])
+    controls = ''
+    if check_permission(user, 'adminski'):
+        if project['active']:
+            controls = '''
+            <button type="button" class="btn btn-danger btn-sm" onclick='modify_project(%s,"suspended");'>Suspend project</button>
+            '''
+        else:
+            controls = '''
+            <button type="button" class="btn btn-success btn-sm" onclick='modify_project(%s,"activated");'>Activate project</button>
+            '''
+        controls = controls % (project['id'])
     # Assigned tasks
     try:
         g.c.execute(READ['PROJECTA'] % (pname,))
@@ -1228,14 +1267,16 @@ def show_project(pname):
         assigned = '''
         <table id="ttasks" class="tablesorter standard">
         <thead>
-        <tr><th>User</th><th>Disposition</th><th>Count</th></tr>
+        <tr><th>User</th><th>Assignment</th><th>Disposition</th><th>Count</th></tr>
         </thead>
         <tbody>
         '''
-        template = "<tr><td>%s</td>" + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+        template = "<tr>" + ''.join('<td>%s</td>')*2 \
+                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
         for task in tasks:
             num_assigned += int(task['num'])
-            assigned += template % (task['user'], task['disposition'], task['num'])
+            assigned += template % (task['user'], task['assignment'],
+                                    task['disposition'], task['num'])
         assigned += "</tbody></table>"
     else:
         assigned = ''
@@ -1250,7 +1291,7 @@ def show_project(pname):
     num_tasks = num_assigned + num_unassigned
     num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
     num_unassigned = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
-    return render_template('project.html', urlroot=request.url_root,
+    return render_template('project.html', urlroot=request.url_root, face=face,
                            project=pname, pprops=pprops, controls=controls,
                            total=num_tasks, num_unassigned=num_unassigned,
                            num_assigned=num_assigned, assigned=assigned)
@@ -1263,6 +1304,7 @@ def show_assignment(aname):
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
         return redirect("https://emdata1.int.janelia.org:15000/login?"
                         + "redirect=http://svirskasr-wm2.janelia.org")
+    user, face = get_web_profile()
     try:
         g.c.execute(READ['ASSIGNMENTN'], (aname,))
         assignment = g.c.fetchone()
@@ -1284,7 +1326,7 @@ def show_assignment(aname):
             aprops.append([show, assignment[prop]])
     tasks, tasks_started = build_task_table(aname)
     controls = ''
-    if not tasks_started:
+    if not tasks_started and  check_permission(user, 'adminski'):
         if assignment['start_date']:
             controls += '''
             <button type="button" class="btn btn-warning btn-sm" onclick='modify_assignment(%s,"reset");'>Reset assignment</button>
@@ -1294,7 +1336,7 @@ def show_assignment(aname):
         <button type="button" class="btn btn-danger btn-sm" onclick='modify_assignment(%s,"deleted");'>Delete assignment</button>
         '''
         controls = controls % (assignment['id'])
-    return render_template('assignment.html', urlroot=request.url_root,
+    return render_template('assignment.html', urlroot=request.url_root, face=face,
                            assignment=aname, aprops=aprops, controls=controls,
                            tasks=tasks)
 
