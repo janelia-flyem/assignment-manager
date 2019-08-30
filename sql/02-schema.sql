@@ -123,7 +123,7 @@ CREATE TABLE `project_property` (
   UNIQUE KEY `project_property_type_uk_ind` (`type_id`,`project_id`) USING BTREE,
   KEY `project_property_project_id_fk_ind` (`project_id`) USING BTREE,
   KEY `project_property_type_id_fk_ind` (`type_id`) USING BTREE,
-  CONSTRAINT `project_property_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `project_property_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE CASCADE ON UPDATE NO ACTION,
   CONSTRAINT `project_property_type_id_fk` FOREIGN KEY (`type_id`) REFERENCES `cv_term` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB AUTO_INCREMENT=64766 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -161,7 +161,7 @@ CREATE TABLE `assignment_property` (
   UNIQUE KEY `assignment_property_type_uk_ind` (`type_id`,`assignment_id`) USING BTREE,
   KEY `assignment_property_line_id_fk_ind` (`assignment_id`) USING BTREE,
   KEY `assignment_property_type_id_fk_ind` (`type_id`) USING BTREE,
-  CONSTRAINT `assignment_property_assignment_id_fk` FOREIGN KEY (`assignment_id`) REFERENCES `assignment` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `assignment_property_assignment_id_fk` FOREIGN KEY (`assignment_id`) REFERENCES `assignment` (`id`) ON DELETE CASCADE ON UPDATE NO ACTION,
   CONSTRAINT `assignment_property_type_id_fk` FOREIGN KEY (`type_id`) REFERENCES `cv_term` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB AUTO_INCREMENT=64766 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;

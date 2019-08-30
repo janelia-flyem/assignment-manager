@@ -2,6 +2,41 @@
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="#">Project</a></li>
 {% endblock %}
+{% block script %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
+<script>
+function modify_project(proj,operation) {
+  url = '/project/'
+  if (operation == 'suspended') {
+    url = url + 'deactivate/';
+  }
+  else {
+    url = url + 'activate/';
+  }
+  url = url + proj
+  token = $.cookie('assignment-manager-token')
+  $.ajax({
+      url: url,
+      headers: {"Authorization": 'Bearer ' + token },
+      type: 'POST',
+      dataType: 'json',
+      contentType:'application/json',
+      success: function(result) {
+        alert("This project has been " + operation);
+        window.location.href = window.location.pathname 
+      },
+      error: function (xhr, ajaxOptions, thrownError) {
+        if (xhr.status == 401) {
+          alert("You are not authenticated");
+        }
+        else {
+          alert(xhr.status + ': ' + thrownError + "\n" + xhr.responseText);
+        }
+      }
+  });
+}
+</script>
+{% endblock %}
 {% block css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
 {% endblock %}
@@ -18,7 +53,8 @@ onload="tableInitialize();"
   {% endfor %}
   </tbody>
   </table>
-  <br>
+  {{controls|safe}}
+  <br><br>
   <h3>Total tasks: {{ total }}</h3>
   <h3>Unassigned tasks: {{ num_unassigned }}</h3>
   <br>

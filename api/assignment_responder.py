@@ -12,13 +12,12 @@ import re
 import sys
 from time import time
 import elasticsearch
-from flask import Flask, g, render_template, request, jsonify
+from flask import Flask, g, make_response, redirect, render_template, request, jsonify
 from flask.json import JSONEncoder
 from flask_cors import CORS
 from flask_swagger import swagger
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
-#import ldap
 import pymysql.cursors
 import pymysql.err
 import requests
@@ -187,6 +186,8 @@ def call_profile(token):
     # url = url.replace('api/', '')
     headers = {"Content-Type": "application/json",
                "Authorization": "Bearer " + token}
+    print(url)
+    print(token)
     try:
         req = requests.get(url, headers=headers)
     except requests.exceptions.RequestException as err: # pragma no cover
@@ -222,6 +223,7 @@ def initialize_result():
             authuser = dtok['ImageURL']
             if not get_user_id(authuser):
                 raise InvalidUsage('User %s is not known to the assignment_manager' % authuser)
+            #authuser = 'robsvi@gmail.com'
             app.config['AUTHORIZED'][token] = authuser
         result['rest']['user'] = authuser
         app.config['USERS'][authuser] = app.config['USERS'].get(authuser, 0) + 1
@@ -530,6 +532,33 @@ def generate_project(protocol, result):
     generate_tasks(result, projectins.unit, projectins.task_insert_props, existing_project)
 
 
+def get_project_properties(project):
+    ''' Get a project's properties
+        Keyword arguments:
+          project: project record
+    '''
+    pprops = []
+    active = "<span style='color:%s'>%s</span>" \
+             % (('lime', 'YES') if project['active'] else ('red', 'NO'))
+    pprops.append(['Active:', active])
+    pprops.append(['Protocol:', project['protocol']])
+    pprops.append(['Priority:', project['priority']])
+    try:
+        g.c.execute("SELECT type,value FROM project_property_vw WHERE name=%s"
+                    "ORDER BY 1", (project['name'],))
+        props = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    for prop in props:
+        if not prop['value']:
+            continue
+        show = prop['type'].replace('_', ' ')
+        show = 'ROI:' if prop['type'] == 'roi' else show.capitalize() + ':'
+        pprops.append([show, prop['value']])
+    return pprops
+
+
 def get_project_by_name_or_id(proj):
     ''' Get a project by ID
         Keyword arguments:
@@ -546,19 +575,20 @@ def get_project_by_name_or_id(proj):
     return project
 
 
-def change_project_active(result, name, flag):
+def change_project_active(result, name_or_id, flag):
     ''' Change a project's active flag
         Keyword arguments:
           result: result dictionary
-          name: project name
+          name: project name or ID
           flag: 1 or 0 (activate or deactivate)
     '''
+    column = 'id' if name_or_id.isdigit() else 'name'
     if not check_permission(result['rest']['user'], 'admin'):
-        raise InvalidUsage("You don't have permission to create projects")
-    if not get_project_by_name_or_id(name):
-        raise InvalidUsage("Project %s does not exist" % name, 404)
-    stmt = "UPDATE project SET active=%s WHERE name='%s'"
-    bind = (flag, name)
+        raise InvalidUsage("You don't have permission to suspend/activate projects")
+    if not get_project_by_name_or_id(name_or_id):
+        raise InvalidUsage("Project %s does not exist" % name_or_id, 404)
+    stmt = "UPDATE project SET active=%s WHERE %s='%s'"
+    bind = (flag, column, name_or_id)
     try:
         g.c.execute(stmt % bind)
     except Exception as err:
@@ -654,7 +684,9 @@ def generate_assignment(ipd, result):
             update_property(result['rest']['inserted_id'], 'assignment', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     updated = 0
-    num_tasks = int(ipd['tasks']) if 'tasks' in ipd else len(tasks)
+    print("Num tasks=%d" % num_tasks)
+    if len(tasks) < num_tasks:
+        num_tasks = len(tasks)
     print("Assigned %s to %s" % (ipd['name'], assignment_user))
     for task in tasks:
         try:
@@ -912,6 +944,47 @@ def get_task_properties(result):
         result['data'].append(task)
 
 
+def build_task_table(aname):
+    ''' Build a table of an assignment's tasks
+        Keyword arguments:
+          aname: assignment name
+    '''
+    try:
+        g.c.execute("SELECT key_type_display,id,key_text,create_date,start_date,"
+                    + "completion_date,disposition,duration,"
+                    + "TIMEDIFF(NOW(),start_date) AS elapsed FROM task_vw WHERE "
+                    + "assignment=%s ORDER BY id", (aname,))
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    tasks = """
+    <table id="tasks" class="tablesorter standard">
+    <thead>
+    <tr><th>ID</th><th>%s</th><th>Created</th><th>Disposition</th><th>Started</th><th>Completed</th><th>Duration</th></tr>
+    </thead>
+    <tbody>
+    """
+    tasks = tasks % rows[0]['key_type_display']
+    template = '<tr class="%s">' + ''.join('<td style="text-align: center">%s</td>')*7 + "</tr>"
+    tasks_started = 0
+    for row in rows:
+        if row['start_date']:
+            tasks_started += 1
+        duration = ''
+        if row['duration']:
+            duration = row['duration']
+        elif row['start_date']:
+            duration = "<span style='color:orange'>%s</span>" % row['elapsed']
+        id_link = '<a href="task/%s">%s</a>' % (row['id'], row['id'])
+        rclass = 'complete' if row['completion_date'] else 'open'
+        tasks += template % (rclass, id_link, row['key_text'], row['create_date'],
+                             row['disposition'], row['start_date'], row['completion_date'],
+                             duration)
+    tasks += "</tbody></table>"
+    return tasks, tasks_started
+
+
 def get_user_id(user):
     ''' Get a user's ID from the "user" table
         Keyword arguments:
@@ -1029,48 +1102,38 @@ def handle_invalid_usage(error):
 # *****************************************************************************
 # * Web content                                                               *
 # *****************************************************************************
-#@app.route('/login', methods=['GET', 'POST', 'OPTIONS'])
-#ef login():
-#    error = None
-#    if request.method == 'POST':
-#        l = ldap.initialize("ldap://hqdc1.hhmi.org")
-#        try:
-#            l.simple_bind_s(request.form['username'], request.form['password'])
-#            return
-#        except Exception as err:
-#           error = 'Invalid'
-#    return render_template('login.html', error=error)
 
 
-@app.route('/login', methods=['GET', 'POST', 'OPTIONS'])
-def log_me_in():
-    ''' Log in
+def get_token():
+    ''' Get the assignment manager token
     '''
-    print("In log_me_in")
-    req = requests.get("https://emdata1.int.janelia.org:15000/api/token/assignment-manager")
+    url = assignment_utilities.CONFIG['neuprint-auth']['url'] + 'token'
+    # url = url.replace('api/', '')
+    cookies = {'flyem-services': request.cookies.get('flyem-services')}
+    headers = {"Content-Type": "application/json"}
     try:
+        req = requests.get(url, headers=headers, cookies=cookies)
+    except requests.exceptions.RequestException as err: # pragma no cover
+        raise InvalidUsage(err, 500)
+    if req.status_code == 200:
         resp = req.json()
-    except Exception as err:
-        temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
-        mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
-        print(mess)
-        return "https://emdata1.int.janelia.org:15000?redirect=http://10.101.10.216/web"
-    if 'token' in resp:
-        # Decode the token we get back
-        return 0
-    print("Missing token")
-    return "https://emdata1.int.janelia.org:15000/api/token/assignment-manager"
+        print("Got token %s" % resp['token'])
+        return resp['token']
+    raise InvalidUsage("No response from %s" % (url))
 
 
-@app.route('/web')
+@app.route('/')
 def show_summary():
     ''' Default route
     '''
-    # Are we logged in?
-    #print("Cookie: [%s]" % (request.cookies.get('flyem-services')))
-    #x = log_me_in()
-    #if x:
-    #    return redirect(x)
+    if not request.cookies.get(app.config['TOKEN']):
+        if request.cookies.get('flyem-services'):
+            token = get_token()
+        else:
+            return redirect("https://emdata1.int.janelia.org:15000/login?"
+                            + "redirect=http://svirskasr-wm2.janelia.org")
+    else:
+        token = request.cookies.get(app.config['TOKEN'])
     try:
         g.c.execute("SELECT * FROM project_stats_vw")
         rows = g.c.fetchall()
@@ -1093,8 +1156,8 @@ def show_summary():
             name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
             rclass += ' ' + name
             proofreaders[name] = row['proofreader']
-            proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
-            assn = '<a href="/web/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
+            proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
+            assn = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
             assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
                                        assn, row['task_disposition'],
                                        row['tasks'])
@@ -1118,7 +1181,7 @@ def show_summary():
         template = "<tr>" + ''.join("<td>%s</td>")*3 \
                    + ''.join('<td style="text-align: center">%s</td>')*3 + "</tr>"
         for row in rows:
-            proj = '<a href="/web/project/%s">%s</a>' % (row['project'], row['project'])
+            proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             active = "<span style='color:%s'>%s</span>" \
                      % (('lime', 'YES') if row['active'] else ('red', 'NO'))
             unassigned += template % (row['protocol'], row['project_group'], proj,
@@ -1126,12 +1189,14 @@ def show_summary():
         unassigned += "</tbody></table>"
     else:
         unassigned = "There are no projects with unassigned tasks"
-    return render_template('home.html', urlroot=request.url_root,
-                           assignments=assignments, proofreaders=proofreaders,
-                           unassigned=unassigned)
+    response = make_response(render_template('home.html', urlroot=request.url_root,
+                                             assignments=assignments, proofreaders=proofreaders,
+                                             unassigned=unassigned))
+    response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
+    return response
 
 
-@app.route('/web/project/<string:pname>')
+@app.route('/project/<string:pname>')
 def show_project(pname):
     ''' Show information for a project
     '''
@@ -1141,24 +1206,16 @@ def show_project(pname):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    pprops = []
-    active = "<span style='color:%s'>%s</span>" \
-             % (('lime', 'YES') if project['active'] else ('red', 'NO'))
-    pprops.append(['Active:', active])
-    pprops.append(['Protocol:', project['protocol']])
-    pprops.append(['Priority:', project['priority']])
-    try:
-        g.c.execute("SELECT type,value FROM project_property_vw WHERE name=%s ORDER BY 1", (pname,))
-        props = g.c.fetchall()
-    except Exception as err:
-        return render_template('error.html', urlroot=request.url_root,
-                               title='SQL error', message=sql_error(err))
-    for prop in props:
-        if not prop['value']:
-            continue
-        show = prop['type'].replace('_', ' ')
-        show = 'ROI:' if prop['type'] == 'roi' else show.capitalize() + ':'
-        pprops.append([show, prop['value']])
+    pprops = get_project_properties(project)
+    if project['active']:
+        controls = '''
+        <button type="button" class="btn btn-danger btn-sm" onclick='modify_project(%s,"suspended");'>Suspend project</button>
+        '''
+    else:
+        controls = '''
+        <button type="button" class="btn btn-success btn-sm" onclick='modify_project(%s,"activated");'>Activate project</button>
+        '''
+    controls = controls % (project['id'])
     # Assigned tasks
     try:
         g.c.execute(READ['PROJECTA'] % (pname,))
@@ -1194,15 +1251,18 @@ def show_project(pname):
     num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
     num_unassigned = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
     return render_template('project.html', urlroot=request.url_root,
-                           project=pname, pprops=pprops, total=num_tasks,
-                           num_unassigned=num_unassigned,
+                           project=pname, pprops=pprops, controls=controls,
+                           total=num_tasks, num_unassigned=num_unassigned,
                            num_assigned=num_assigned, assigned=assigned)
 
 
-@app.route('/web/assignment/<string:aname>')
+@app.route('/assignment/<string:aname>')
 def show_assignment(aname):
     ''' Show information for an assignment
     '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=http://svirskasr-wm2.janelia.org")
     try:
         g.c.execute(READ['ASSIGNMENTN'], (aname,))
         assignment = g.c.fetchone()
@@ -1219,44 +1279,27 @@ def show_assignment(aname):
             show = prop.replace('_', ' ')
             show = 'User:' if prop == 'user2' else show.capitalize() + ':'
             if prop == 'project':
-                assignment[prop] = '<a href="/web/project/%s">%s</a>' \
+                assignment[prop] = '<a href="/project/%s">%s</a>' \
                                    % (assignment[prop], assignment[prop])
             aprops.append([show, assignment[prop]])
-    try:
-        g.c.execute("SELECT key_type_display,id,key_text,create_date,start_date,"
-                    + "completion_date,disposition,duration,"
-                    + "TIMEDIFF(NOW(),start_date) AS elapsed FROM task_vw WHERE "
-                    + "assignment=%s ORDER BY id", (aname,))
-        rows = g.c.fetchall()
-    except Exception as err:
-        return render_template('error.html', urlroot=request.url_root,
-                               title='SQL error', message=sql_error(err))
-    tasks = """
-    <table id="tasks" class="tablesorter standard">
-    <thead>
-    <tr><th>ID</th><th>%s</th><th>Created</th><th>Disposition</th><th>Started</th><th>Completed</th><th>Duration</th></tr>
-    </thead>
-    <tbody>
-    """
-    tasks = tasks % rows[0]['key_type_display']
-    template = '<tr class="%s">' + ''.join('<td style="text-align: center">%s</td>')*7 + "</tr>"
-    for row in rows:
-        duration = ''
-        if row['duration']:
-            duration = row['duration']
-        elif row['start_date']:
-            duration = "<span style='color:orange'>%s</span>" % row['elapsed']
-        id_link = '<a href="/web/task/%s">%s</a>' % (row['id'], row['id'])
-        rclass = 'complete' if row['completion_date'] else 'open'
-        tasks += template % (rclass, id_link, row['key_text'], row['create_date'],
-                             row['disposition'], row['start_date'], row['completion_date'],
-                             duration)
-    tasks += "</tbody></table>"
+    tasks, tasks_started = build_task_table(aname)
+    controls = ''
+    if not tasks_started:
+        if assignment['start_date']:
+            controls += '''
+            <button type="button" class="btn btn-warning btn-sm" onclick='modify_assignment(%s,"reset");'>Reset assignment</button>
+            '''
+            controls = controls % (assignment['id'])
+        controls += '''
+        <button type="button" class="btn btn-danger btn-sm" onclick='modify_assignment(%s,"deleted");'>Delete assignment</button>
+        '''
+        controls = controls % (assignment['id'])
     return render_template('assignment.html', urlroot=request.url_root,
-                           assignment=aname, aprops=aprops, tasks=tasks)
+                           assignment=aname, aprops=aprops, controls=controls,
+                           tasks=tasks)
 
 
-@app.route('/web/task/<string:task_id>')
+@app.route('/task/<string:task_id>')
 def show_task(task_id):
     ''' Show information for a task
     '''
@@ -1306,7 +1349,7 @@ def show_task(task_id):
 # * Endpoints                                                                 *
 # *****************************************************************************
 
-@app.route('/')
+@app.route('/help')
 def show_swagger():
     ''' Show Swagger docs
     '''
@@ -2279,6 +2322,7 @@ def get_projects_eligible():
     result['rest']['row_count'] = len(result['projects'])
     return generate_response(result)
 
+
 # *****************************************************************************
 # * Assignment endpoints                                                      *
 # *****************************************************************************
@@ -2656,53 +2700,6 @@ def new_assignment(project_name):
     return generate_response(result)
 
 
-@app.route('/assignment/<string:assignment_id>', methods=['OPTIONS', 'DELETE'])
-def delete_assignment(assignment_id):
-    '''
-    Delete an assignment
-    Selete an assignment and revert its tasks back to unassigned.
-    ---
-    tags:
-      - Assignment
-    parameters:
-      - in: path
-        name: assignment_id
-        schema:
-          type: string
-        required: true
-        description: assignment ID
-    responses:
-      200:
-          description: Assignment deleted
-      404:
-          description: Assignment was not deleted
-    '''
-    result = initialize_result()
-    assignment = get_assignment_by_id(assignment_id)
-    if not assignment:
-        raise InvalidUsage("Assignment %s was not found" % assignment_id, 404)
-    tasks = get_tasks_by_assignment_id(assignment_id)
-    for task in tasks:
-        if task['start_date']:
-            raise InvalidUsage("Assignment %s has one or more started tasks" % (assignment_id))
-    try:
-        stmt = "UPDATE task SET assignment_id=NULL WHERE assignment_id = %s"
-        bind = (assignment_id)
-        g.c.execute(stmt, bind)
-        result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
-        for task in tasks:
-            bind = (g.c.lastrowid, task['project_id'], assignment_id, task['key_type'],
-                    task['key_text'], 'Unassigned', task['user'])
-            g.c.execute(WRITE['TASK_AUDIT'], bind)
-        g.c.execute("DELETE from assignment WHERE id=%s", (assignment_id))
-        result['rest']['row_count'] += g.c.rowcount
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    g.db.commit()
-    return generate_response(result)
-
-
 @app.route('/assignment/<string:assignment_id>/start', methods=['OPTIONS', 'POST'])
 def start_assignment_by_id(assignment_id): # pragma: no cover
     '''
@@ -2781,7 +2778,8 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
 @app.route('/assignment/<string:assignment_id>/reset', methods=['OPTIONS', 'POST'])
 def reset_assignment_by_id(assignment_id): # pragma: no cover
     '''
-    Reset an assignment (remove start and completion times)
+    Reset an assignment (remove start time)
+    An assignment can only be started if none of its tasks have been started.
     ---
     tags:
       - Assignment
@@ -2837,6 +2835,54 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
     remove_id_from_index(assignment_id, 'assignment_start-*', result)
     remove_id_from_index(assignment_id, 'assignment_complete-*', result)
     result['rest']['row_count'] = g.c.rowcount
+    g.db.commit()
+    return generate_response(result)
+
+
+@app.route('/assignment/<string:assignment_id>', methods=['OPTIONS', 'DELETE'])
+def delete_assignment(assignment_id):
+    '''
+    Delete an assignment
+    Delete an assignment and revert its tasks back to unassigned. Assignments can
+    only be deleted if none of their tasks have been started.
+    ---
+    tags:
+      - Assignment
+    parameters:
+      - in: path
+        name: assignment_id
+        schema:
+          type: string
+        required: true
+        description: assignment ID
+    responses:
+      200:
+          description: Assignment deleted
+      404:
+          description: Assignment was not deleted
+    '''
+    result = initialize_result()
+    assignment = get_assignment_by_id(assignment_id)
+    if not assignment:
+        raise InvalidUsage("Assignment %s was not found" % assignment_id, 404)
+    tasks = get_tasks_by_assignment_id(assignment_id)
+    for task in tasks:
+        if task['start_date']:
+            raise InvalidUsage("Assignment %s has one or more started tasks" % (assignment_id))
+    try:
+        stmt = "UPDATE task SET assignment_id=NULL WHERE assignment_id = %s"
+        bind = (assignment_id)
+        g.c.execute(stmt, bind)
+        result['rest']['row_count'] = g.c.rowcount
+        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
+        for task in tasks:
+            bind = (g.c.lastrowid, task['project_id'], assignment_id, task['key_type'],
+                    task['key_text'], 'Unassigned', task['user'])
+            g.c.execute(WRITE['TASK_AUDIT'], bind)
+        g.c.execute("DELETE from assignment WHERE id=%s", (assignment_id))
+        result['rest']['row_count'] += g.c.rowcount
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
     g.db.commit()
     return generate_response(result)
 

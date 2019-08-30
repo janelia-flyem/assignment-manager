@@ -3,6 +3,7 @@
 <li class="breadcrumb-item"><a href="#">Assignment</a></li>
 {% endblock %}
 {% block script %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
 <script>
 function show_all() {
   $(".open").show();
@@ -10,6 +11,37 @@ function show_all() {
   $('#hc').removeAttr("disabled");
   $('#ho').removeAttr("disabled");
   $('#proofreader').val('all');
+}
+
+function modify_assignment(assn,operation) {
+  url = '/assignment/' + assn
+  if (operation == 'deleted') {
+    atype = 'DELETE';
+  }
+  else {
+    atype = 'POST';
+    url = url + '/reset';
+  }
+  token = $.cookie('assignment-manager-token')
+  $.ajax({
+      url: url,
+      headers: {"Authorization": 'Bearer ' + token },
+      type: atype,
+      dataType: 'json',
+      contentType:'application/json',
+      success: function(result) {
+        alert("This assignment has been " + operation);
+        window.location.href = '/'
+      },
+      error: function (xhr, ajaxOptions, thrownError) {
+        if (xhr.status == 401) {
+          alert("You are not authenticated");
+        }
+        else {
+          alert(xhr.status + ': ' + thrownError);
+        }
+      }
+  });
 }
 </script>
 {% endblock %}
@@ -29,8 +61,9 @@ onload="tableInitialize();"
   {% endfor %}
   </tbody>
   </table>
-  <br>
-  <h2>Tasks</h2>
+  {{controls|safe}}
+  <br><br>
+  <h3>Tasks</h3>
   <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
   <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
   <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button>
