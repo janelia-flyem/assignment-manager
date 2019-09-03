@@ -105,7 +105,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.5.0'
+__version__ = '0.5.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1072,6 +1072,7 @@ def add_user_permissions(result, user, permissions):
 def get_token():
     ''' Get the assignment manager token
     '''
+    print("Requesting token")
     url = assignment_utilities.CONFIG['neuprint-auth']['url'] + 'api/token/assignment-manager'
     # url = url.replace('api/', '')
     cookies = {'flyem-services': request.cookies.get('flyem-services')}
@@ -1181,6 +1182,51 @@ def handle_invalid_usage(error):
 # *****************************************************************************
 
 
+@app.route('/profile')
+def profile():
+    ''' Show user profile
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=http://svirskasr-wm2.janelia.org")
+    user, face = get_web_profile()
+    try:
+        g.c.execute('SELECT * FROM user_vw WHERE name=%s', (user,))
+        rec = g.c.fetchone()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    uprops = []
+    uprops.append(['Name:', ' '.join([rec['first'], rec['last']])])
+    uprops.append(['Janelia ID:', rec['janelia_id']])
+    uprops.append(['Organization:', rec['organization']])
+    uprops.append(['Permissions:', '<br>'.join(rec['permissions'].split(','))])
+    token = request.cookies.get(app.config['TOKEN'])
+    return render_template('profile.html', urlroot=request.url_root, face=face,
+                           user=user, uprops=uprops, token=token)
+
+
+@app.route('/logout')
+def logout():
+    ''' Log out
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return render_template('error.html', urlroot=request.url_root,
+                               title='You are not logged in',
+                               message="You can't log out unless you're logged in")
+    url = assignment_utilities.CONFIG['neuprint-auth']['url'] + 'logout'
+    headers = {"Content-Type": "application/json"}
+    cookies = {'flyem-services': request.cookies.get('flyem-services')}
+    try:
+        requests.post(url, headers=headers, cookies=cookies)
+    except requests.exceptions.RequestException as err:
+        print(err)
+    response = make_response(render_template('logout.html', urlroot=request.url_root))
+    response.set_cookie('flyem-services', '', domain='.janelia.org', expires=0)
+    response.set_cookie(app.config['TOKEN'], '', domain='.janelia.org', expires=0)
+    return response
+
+
 @app.route('/')
 def show_summary():
     ''' Default route
@@ -1222,6 +1268,9 @@ def show_summary():
         unassigned += "</tbody></table>"
     else:
         unassigned = "There are no projects with unassigned tasks"
+    if not token:
+        token = ''
+    assignments = "%s: %s<br>" % (app.config['TOKEN'], token) + assignments
     response = make_response(render_template('home.html', urlroot=request.url_root, face=face,
                                              assignments=assignments, proofreaders=proofreaders,
                                              unassigned=unassigned))
@@ -1245,7 +1294,7 @@ def show_project(pname):
                                title='SQL error', message=sql_error(err))
     pprops = get_project_properties(project)
     controls = ''
-    if check_permission(user, 'adminski'):
+    if check_permission(user, 'admin'):
         if project['active']:
             controls = '''
             <button type="button" class="btn btn-danger btn-sm" onclick='modify_project(%s,"suspended");'>Suspend project</button>
@@ -1326,7 +1375,7 @@ def show_assignment(aname):
             aprops.append([show, assignment[prop]])
     tasks, tasks_started = build_task_table(aname)
     controls = ''
-    if not tasks_started and  check_permission(user, 'adminski'):
+    if not tasks_started and  check_permission(user, 'admin'):
         if assignment['start_date']:
             controls += '''
             <button type="button" class="btn btn-warning btn-sm" onclick='modify_assignment(%s,"reset");'>Reset assignment</button>
