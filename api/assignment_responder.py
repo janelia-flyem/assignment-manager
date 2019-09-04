@@ -1243,7 +1243,7 @@ def profile():
     '''
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
         return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=http://svirskasr-wm2.janelia.org")
+                        + "redirect=/")
     user, face = get_web_profile()
     try:
         g.c.execute('SELECT * FROM user_vw WHERE name=%s', (user,))
@@ -1267,7 +1267,7 @@ def user_config(uname):
     '''
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
         return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=http://svirskasr-wm2.janelia.org")
+                        + "redirect=/")
     user, face = get_web_profile()
     if not check_permission(user, 'admin'):
         return render_template('error.html', urlroot=request.url_root,
@@ -1317,12 +1317,15 @@ def logout():
 def show_summary():
     ''' Default route
     '''
+    print(request.url_root)
     if not request.cookies.get(app.config['TOKEN']):
         if request.cookies.get('flyem-services'):
+            print("We have a flyem-services cookie, calling get_token()")
             token = get_token()
         else:
+            print("We don't have a flyem-services cookie, redirecting")
             return redirect("https://emdata1.int.janelia.org:15000/login?"
-                            + "redirect=http://svirskasr-wm2.janelia.org")
+                            + "redirect=" + request.url_root)
     else:
         token = request.cookies.get(app.config['TOKEN'])
     face = ''
@@ -1370,7 +1373,7 @@ def show_project(pname):
     '''
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
         return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=http://svirskasr-wm2.janelia.org")
+                        + "redirect=" + request.url_root)
     user, face = get_web_profile()
     try:
         g.c.execute("SELECT * FROM project_vw WHERE name=%s", (pname,))
@@ -1438,7 +1441,7 @@ def show_assignment(aname):
     '''
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
         return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=http://svirskasr-wm2.janelia.org")
+                        + "redirect=" + request.url_root)
     user, face = get_web_profile()
     try:
         g.c.execute(READ['ASSIGNMENTN'], (aname,))
