@@ -1317,13 +1317,10 @@ def logout():
 def show_summary():
     ''' Default route
     '''
-    print(request.url_root)
     if not request.cookies.get(app.config['TOKEN']):
         if request.cookies.get('flyem-services'):
-            print("We have a flyem-services cookie, calling get_token()")
             token = get_token()
         else:
-            print("We don't have a flyem-services cookie, redirecting")
             return redirect("https://emdata1.int.janelia.org:15000/login?"
                             + "redirect=" + request.url_root)
     else:
@@ -1359,7 +1356,6 @@ def show_summary():
         unassigned = "There are no projects with unassigned tasks"
     if not token:
         token = ''
-    assignments = "%s: %s<br>" % (app.config['TOKEN'], token) + assignments
     response = make_response(render_template('home.html', urlroot=request.url_root, face=face,
                                              assignments=assignments, proofreaders=proofreaders,
                                              unassigned=unassigned))
