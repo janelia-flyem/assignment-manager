@@ -105,7 +105,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.5.1'
+__version__ = '0.5.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -654,6 +654,9 @@ def select_user(project, ipd, result):
     '''
     if 'user' in ipd:
         # On behalf of
+        if not check_permission(result['rest']['user'], 'admin'):
+            raise InvalidUsage("%s doesn't have permission to assign on behalf of %s"
+                               % (result['rest']['user'], ipd['user']))
         assignment_user = validate_user(ipd['user'])
     else:
         assignment_user = result['rest']['user']
@@ -661,6 +664,43 @@ def select_user(project, ipd, result):
         raise InvalidUsage("%s doesn't have permission to process %s assignments"
                            % (assignment_user, project['protocol']))
     return assignment_user
+
+
+def show_protocols(user):
+    ''' Generate a user protocol table.
+        Keyword arguments:
+          user: user instance
+    '''
+    permissions = user['permissions'].split(',')
+    g.c.execute("SELECT cv_term,display_name FROM cv_term_vw WHERE cv='protocol' ORDER BY 1")
+    rows = g.c.fetchall()
+    parray = []
+    template = '<tr><td>%s</td><td style="text-align: center">%s</td></tr>'
+    for row in rows:
+        display = row['display_name']
+        if row['cv_term'] in sys.modules:
+            val = 'checked="checked"' if row['cv_term'] in permissions else ''
+            check = '<input type="checkbox" %s id="%s" onchange="changebox(this);">' \
+                    % (val, row['cv_term'])
+        else:
+            display = '<span style="color:#666;text-decoration:line-through;">%s</span>' % display
+            check = '<input type="checkbox" disabled>'
+        parray.append(template % (display, check))
+    ptable = '<table><thead><tr><th>Protocol</th><th>Enabled</th></tr></thead><tbody>' \
+             + ''.join(parray) + '</tbody></table>'
+    return ptable
+
+
+def check_project(project, ipd):
+    ''' Check to ensure that a project exists and is active.
+        Keyword arguments:
+          task: task instance
+          ipd: request payload
+    '''
+    if not project:
+        raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
+    if not project['active']:
+        raise InvalidUsage("Project %s is not active" % project['name'])
 
 
 def generate_assignment(ipd, result):
@@ -671,8 +711,7 @@ def generate_assignment(ipd, result):
     '''
     # Find the project
     project = get_project_by_name_or_id(ipd['project_name'])
-    if not project:
-        raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
+    check_project(project, ipd)
     assignment_user = select_user(project, ipd, result)
     ipd['project_name'] = project['name']
     constructor = globals()[project['protocol'].capitalize()]
@@ -877,6 +916,20 @@ def add_point(ipd, key, result):
         result['rest']['row_count'] += g.c.rowcount
 
 
+def check_task(task, ipd, result):
+    ''' Check to ensure that a task exists and can be changed by the current user.
+        Keyword arguments:
+          task: task instance
+          ipd: request payload
+          result: result dictionary
+    '''
+    if not task:
+        raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
+    if task['user'] != result['rest']['user']:
+        raise InvalidUsage("Task is assigned to %s, not %s"
+                           % (task['user'], result['rest']['user']))
+
+
 def start_task(ipd, result):
     ''' Start a task.
         Keyword arguments:
@@ -884,9 +937,10 @@ def start_task(ipd, result):
           result: result dictionary
     '''
     task = get_task_by_id(ipd['id'])
-    if not task:
-        raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
+    check_task(task, ipd, result)
     project = get_project_by_name_or_id(task['project_id'])
+    if not project['active']:
+        raise InvalidUsage("Project %s is not active" % project['name'])
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
     if task['start_date']:
@@ -933,9 +987,10 @@ def complete_task(ipd, result):
           result: result dictionary
     '''
     task = get_task_by_id(ipd['id'])
-    if not task:
-        raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
+    check_task(task, ipd, result)
     project = get_project_by_name_or_id(task['project_id'])
+    if not project['active']:
+        raise InvalidUsage("Project %s is not active" % project['name'])
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
     if not task['start_date']:
@@ -1204,6 +1259,37 @@ def profile():
     token = request.cookies.get(app.config['TOKEN'])
     return render_template('profile.html', urlroot=request.url_root, face=face,
                            user=user, uprops=uprops, token=token)
+
+
+@app.route('/user/<string:uname>')
+def user_config(uname):
+    ''' Show user profile
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=http://svirskasr-wm2.janelia.org")
+    user, face = get_web_profile()
+    if not check_permission(user, 'admin'):
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Permission error',
+                               message="You don't have permission to view another user's profile")
+    try:
+        g.c.execute('SELECT * FROM user_vw WHERE name=%s', (uname,))
+        rec = g.c.fetchone()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    if not rec:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Not found',
+                               message="User %s was not found" % uname)
+    uprops = []
+    uprops.append(['Name:', ' '.join([rec['first'], rec['last']])])
+    uprops.append(['Janelia ID:', rec['janelia_id']])
+    uprops.append(['Organization:', rec['organization']])
+    ptable = show_protocols(rec)
+    return render_template('user.html', urlroot=request.url_root, face=face,
+                           user=uname, uprops=uprops, ptable=ptable)
 
 
 @app.route('/logout')
