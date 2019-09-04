@@ -1080,7 +1080,7 @@ def build_task_table(aname):
             duration = row['duration']
         elif row['start_date']:
             duration = "<span style='color:orange'>%s</span>" % row['elapsed']
-        id_link = '<a href="task/%s">%s</a>' % (row['id'], row['id'])
+        id_link = '<a href="/task/%s">%s</a>' % (row['id'], row['id'])
         rclass = 'complete' if row['completion_date'] else 'open'
         tasks += template % (rclass, id_link, row['key_text'], row['create_date'],
                              row['disposition'], row['start_date'], row['completion_date'],
