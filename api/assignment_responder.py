@@ -706,7 +706,7 @@ def build_protocols_table(user):
     g.c.execute("SELECT cv_term,display_name FROM cv_term_vw WHERE cv='protocol' ORDER BY 1")
     rows = g.c.fetchall()
     parray = []
-    template = '<tr><td>%s</td><td style="text-align: center">%s</td></tr>'
+    template = '<tr><td style="width:300px">%s</td><td style="text-align: center">%s</td></tr>'
     for row in rows:
         display = row['display_name']
         if row['cv_term'] in sys.modules:
@@ -717,8 +717,17 @@ def build_protocols_table(user):
             display = '<span style="color:#666;text-decoration:line-through;">%s</span>' % display
             check = '<input type="checkbox" disabled>'
         parray.append(template % (display, check))
-    ptable = '<table><thead><tr><th>Protocol</th><th>Enabled</th></tr></thead><tbody>' \
+    ptable = '<table><thead><tr style="color:#069"><th>Protocol</th>' \
+             + '<th>Enabled</th></tr></thead><tbody>' \
              + ''.join(parray) + '</tbody></table>'
+    parray = []
+    val = 'checked="checked"' if 'admin' in permissions else ''
+    check = '<input type="checkbox" %s id="%s" onchange="changebox(this);">' \
+            % (val, 'admin')
+    parray.append(template % ('Administrative', check))
+    ptable += '<table><thead><tr style="color:#069"><th>Permission</th>' \
+              + '<th>Enabled</th></tr></thead><tbody>' \
+              + ''.join(parray) + '</tbody></table>'
     return ptable
 
 
