@@ -53,10 +53,9 @@ READ = {
                      + "FIELD(priority,'high','medium','low'),todo_type",
     'GET_ASSOCIATION': "SELECT object FROM cv_term_relationship_vw WHERE "
                        + "subject=%s AND relationship='associated_with'",
-    'PROJECTA': "SELECT CONCAT(first,' ',last) AS user,assignment,disposition,COUNT(1) AS num "
-                + "FROM task_vw t "
-                + "JOIN user u ON (u.name=t.user) WHERE project='%s' AND assignment_id IS NOT NULL "
-                + "GROUP BY 1,2,3",
+    'PROJECTA': "SELECT t.user,CONCAT(first,' ',last) AS proofreader,assignment,disposition,"
+                + "COUNT(1) AS num FROM task_vw t JOIN user u ON (u.name=t.user) "
+                + "WHERE project='%s' AND assignment_id IS NOT NULL GROUP BY 1,2,3,4",
     'PROJECTUA': "SELECT COUNT(1) AS num FROM task_vw WHERE project='%s' AND assignment_id IS NULL",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
@@ -105,7 +104,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.5.2'
+__version__ = '0.5.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -571,6 +570,38 @@ def get_project_properties(project):
     return pprops
 
 
+def get_assigned_tasks(tasks, user):
+    ''' Get a project's tasks
+        Keyword arguments:
+          tasks: list of tasks
+          user: user
+    '''
+    num_assigned = 0
+    if tasks:
+        permissions = check_permission(user)
+        assigned = '''
+        <table id="ttasks" class="tablesorter standard">
+        <thead>
+        <tr><th>User</th><th>Assignment</th><th>Disposition</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+        '''
+        template = "<tr>" + ''.join('<td>%s</td>')*2 \
+                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+        for task in tasks:
+            num_assigned += int(task['num'])
+            link = '<a href="/assignment/%s">%s</a>' % (task['assignment'], task['assignment'])
+            if 'admin' not in permissions and task['user'] != user:
+                task['proofreader'] = '-'
+                link = task['assignment']
+            assigned += template % (task['proofreader'], link,
+                                    task['disposition'], task['num'])
+        assigned += "</tbody></table>"
+    else:
+        assigned = ''
+    return assigned, num_assigned
+
+
 def get_project_by_name_or_id(proj):
     ''' Get a project by ID
         Keyword arguments:
@@ -666,7 +697,7 @@ def select_user(project, ipd, result):
     return assignment_user
 
 
-def show_protocols(user):
+def build_protocols_table(user):
     ''' Generate a user protocol table.
         Keyword arguments:
           user: user instance
@@ -847,12 +878,15 @@ def complete_assignment(ipd, result, assignment, incomplete_okay=False):
     publish_kafka('assignment_complete', result, message)
 
 
-def get_all_assignments():
+def build_assignment_table(user):
     ''' Get a list of all assignments and return as a table.
         Also return a dictionary of proofreaders.
     '''
+    stmt = "SELECT * FROM project_stats_vw"
+    if not check_permission(user, 'admin'):
+        stmt += " WHERE user='" + user + "'"
     try:
-        g.c.execute("SELECT * FROM project_stats_vw")
+        g.c.execute(stmt)
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
@@ -1287,7 +1321,7 @@ def user_config(uname):
     uprops.append(['Name:', ' '.join([rec['first'], rec['last']])])
     uprops.append(['Janelia ID:', rec['janelia_id']])
     uprops.append(['Organization:', rec['organization']])
-    ptable = show_protocols(rec)
+    ptable = build_protocols_table(rec)
     return render_template('user.html', urlroot=request.url_root, face=face,
                            user=uname, uprops=uprops, ptable=ptable)
 
@@ -1320,6 +1354,7 @@ def show_summary():
     if not request.cookies.get(app.config['TOKEN']):
         if request.cookies.get('flyem-services'):
             token = get_token()
+            user, face = get_web_profile(token)
         else:
             return redirect("https://emdata1.int.janelia.org:15000/login?"
                             + "redirect=" + request.url_root)
@@ -1327,33 +1362,37 @@ def show_summary():
         token = request.cookies.get(app.config['TOKEN'])
     face = ''
     if request.cookies.get(app.config['TOKEN']):
-        _, face = get_web_profile()
-    proofreaders, assignments = get_all_assignments()
-    try:
-        g.c.execute(READ['UPSUMMARY'])
-        rows = g.c.fetchall()
-    except Exception as err:
-        return render_template('error.html', urlroot=request.url_root,
-                               title='SQL error', message=sql_error(err))
-    if rows:
-        unassigned = '''
-        <table id="unassigned" class="tablesorter standard">
-        <thead>
-        <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Priority</th><th>Active</th></tr>
-        </thead>
-        <tbody>
-        '''
-        template = "<tr>" + ''.join("<td>%s</td>")*3 \
-                   + ''.join('<td style="text-align: center">%s</td>')*3 + "</tr>"
-        for row in rows:
-            proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
-            active = "<span style='color:%s'>%s</span>" \
-                     % (('lime', 'YES') if row['active'] else ('red', 'NO'))
-            unassigned += template % (row['protocol'], row['project_group'], proj,
-                                      row['num'], row['priority'], active)
-        unassigned += "</tbody></table>"
+        user, face = get_web_profile()
+    proofreaders, assignments = build_assignment_table(user)
+    if check_permission(user, 'admin'):
+        try:
+            g.c.execute(READ['UPSUMMARY'])
+            rows = g.c.fetchall()
+        except Exception as err:
+            return render_template('error.html', urlroot=request.url_root,
+                                   title='SQL error', message=sql_error(err))
+        if rows:
+            unassigned = '''
+            <h2>Projects with unassigned tasks</h2>
+            <table id="unassigned" class="tablesorter standard">
+            <thead>
+            <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Priority</th><th>Active</th></tr>
+            </thead>
+            <tbody>
+            '''
+            template = "<tr>" + ''.join("<td>%s</td>")*3 \
+                       + ''.join('<td style="text-align: center">%s</td>')*3 + "</tr>"
+            for row in rows:
+                proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
+                active = "<span style='color:%s'>%s</span>" \
+                         % (('lime', 'YES') if row['active'] else ('red', 'NO'))
+                unassigned += template % (row['protocol'], row['project_group'], proj,
+                                          row['num'], row['priority'], active)
+            unassigned += "</tbody></table>"
+        else:
+            unassigned = "There are no projects with unassigned tasks"
     else:
-        unassigned = "There are no projects with unassigned tasks"
+        unassigned = ''
     if not token:
         token = ''
     response = make_response(render_template('home.html', urlroot=request.url_root, face=face,
@@ -1396,24 +1435,7 @@ def show_project(pname):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    num_assigned = 0
-    if tasks:
-        assigned = '''
-        <table id="ttasks" class="tablesorter standard">
-        <thead>
-        <tr><th>User</th><th>Assignment</th><th>Disposition</th><th>Count</th></tr>
-        </thead>
-        <tbody>
-        '''
-        template = "<tr>" + ''.join('<td>%s</td>')*2 \
-                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
-        for task in tasks:
-            num_assigned += int(task['num'])
-            assigned += template % (task['user'], task['assignment'],
-                                    task['disposition'], task['num'])
-        assigned += "</tbody></table>"
-    else:
-        assigned = ''
+    assigned, num_assigned = get_assigned_tasks(tasks, user)
     # Unassigned tasks
     try:
         g.c.execute(READ['PROJECTUA'] % (pname,))
@@ -1445,6 +1467,11 @@ def show_assignment(aname):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
+    if not check_permission(user, 'admin') and assignment['user'] != user:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='No permission',
+                               message="You don't have permission to view " \
+                                       + "other proofreader's assignments")
     if not assignment:
         return render_template('error.html', urlroot=request.url_root,
                                message='Assignment %s was not found' % aname)
@@ -1479,12 +1506,21 @@ def show_assignment(aname):
 def show_task(task_id):
     ''' Show information for a task
     '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=" + request.url_root)
+    user, face = get_web_profile()
     try:
         g.c.execute("SELECT * FROM task_vw WHERE id=%s" % (task_id,))
         task = g.c.fetchone()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
+    if not check_permission(user, 'admin') and task['user'] != user:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='No permission',
+                               message="You don't have permission to view " \
+                                       + "other proofreader's assignments")
     tprops = []
     tprops.append(['Project:', task['project']])
     tprops.append(['Protocol:', task['protocol']])
@@ -1517,7 +1553,7 @@ def show_task(task_id):
     audit = []
     for row in rows:
         audit.append([row['disposition'], row['user'], row['create_date']])
-    return render_template('task.html', urlroot=request.url_root,
+    return render_template('task.html', urlroot=request.url_root, face=face,
                            task=task_id, tprops=tprops, audit=audit)
 
 

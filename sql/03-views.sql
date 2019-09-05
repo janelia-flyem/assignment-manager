@@ -338,6 +338,7 @@ JOIN user u ON (u.id=up.user_id)
 
 CREATE OR REPLACE VIEW project_stats_vw AS
 SELECT
+    a.user AS user,
     CONCAT(u.first,' ',u.last) AS proofreader,
     a.project,a.name AS assignment,
     a.protocol,
