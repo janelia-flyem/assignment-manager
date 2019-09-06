@@ -280,11 +280,12 @@ def call_responder(server, endpoint, payload=''):
             req = requests.get(url)
     except requests.exceptions.RequestException as err:
         print(err)
-        sys.exit(-1)
+        raise(err)
     if req.status_code == 200:
         return req.json()
     print("Could not get response from %s: %s" % (url, req.text))
-    raise InvalidUsage(req.text, req.status_code)
+    raise InvalidUsage("Could not get response from %s: %s" % (url, req.text))
+    # raise InvalidUsage(req.text, req.status_code)
 
 
 def working_duration(start_unix, end_unix):

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="#">User list</a></li>
+{% endblock %}
+{% block css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
+{% endblock %}
+{% block onload %}
+onload="tableInitialize();"
+{% endblock %}
+
+{% block content %}
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav mr-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Assignments</a>
+        </li>
+        <li class="nav-item active">
+          <a class="nav-link" href="#">Users <span class="sr-only">(current)</span></a>
+        </li>
+      </ul>
+    </div>
+  </nav>
+  <h3>Users</h3>
+  <table id="users" class="tablesorter standard">
+  <thead>
+    <tr><th>User</th><th>Name</th><th>Janelia ID</th><th>Email</th><th>Organization</th><th>Permissions</th></tr>
+  </thead>
+  <tbody>
+  {% for row in users %}
+    <tr><td>{{row[0]}}</td><td>{{row[1]|safe}}</td><td>{{row[2]}}</td><td>{{row[3]}}</td><td>{{row[4]}}</td><td>{{row[5]}}</td></tr>
+  {% endfor %}
+  </tbody>
+  </table>
+{% endblock %}

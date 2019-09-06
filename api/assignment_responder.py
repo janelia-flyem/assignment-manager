@@ -104,7 +104,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.5.3'
+__version__ = '0.5.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1304,6 +1304,33 @@ def profile():
                            user=user, uprops=uprops, token=token)
 
 
+@app.route('/userlist')
+def user_list():
+    ''' Show list of users
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=/")
+    user, face = get_web_profile()
+    if not check_permission(user, 'admin'):
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Permission error',
+                               message="You don't have permission to view authorized users")
+    try:
+        g.c.execute('SELECT * FROM user_vw ORDER BY last,first')
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    ulist = []
+    for row in rows:
+        link = '<a href="/user/%s">%s</a>' % (row['name'], row['name'])
+        ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
+                      row['email'], row['organization'], row['permissions']])
+    return render_template('userlist.html', urlroot=request.url_root, face=face,
+                           user=user, users=ulist)
+
+
 @app.route('/user/<string:uname>')
 def user_config(uname):
     ''' Show user profile
@@ -1373,7 +1400,9 @@ def show_summary():
     if request.cookies.get(app.config['TOKEN']):
         user, face = get_web_profile()
     proofreaders, assignments = build_assignment_table(user)
+    page_template = 'home.html'
     if check_permission(user, 'admin'):
+        page_template = 'home_admin.html'
         try:
             g.c.execute(READ['UPSUMMARY'])
             rows = g.c.fetchall()
@@ -1404,7 +1433,7 @@ def show_summary():
         unassigned = ''
     if not token:
         token = ''
-    response = make_response(render_template('home.html', urlroot=request.url_root, face=face,
+    response = make_response(render_template(page_template, urlroot=request.url_root, face=face,
                                              assignments=assignments, proofreaders=proofreaders,
                                              unassigned=unassigned))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
@@ -3587,7 +3616,7 @@ def get_user_columns():
     return generate_response(result)
 
 
-@app.route('/user', methods=['OPTIONS', 'POST'])
+@app.route('/adduser', methods=['OPTIONS', 'POST'])
 def add_user(): # pragma: no cover
     '''
     Add user
@@ -3626,7 +3655,7 @@ def add_user(): # pragma: no cover
         raise InvalidUsage("You don't have permission to add a user")
     data = call_responder('config', 'config/workday/' + ipd['janelia_id'])
     if not data:
-        raise InvalidUsage('User %s not found in Workday' % (ipd['user']))
+        raise InvalidUsage('User %s not found in Workday' % (ipd['name']))
     work = data['config']
     try:
         bind = (ipd['name'], work['first'], work['last'],
