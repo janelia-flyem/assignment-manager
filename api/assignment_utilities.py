@@ -5,7 +5,6 @@
 import datetime
 import random
 import re
-import sys
 import string
 import time
 from urllib.parse import parse_qs
@@ -280,7 +279,7 @@ def call_responder(server, endpoint, payload=''):
             req = requests.get(url)
     except requests.exceptions.RequestException as err:
         print(err)
-        raise(err)
+        raise err
     if req.status_code == 200:
         return req.json()
     print("Could not get response from %s: %s" % (url, req.text))
