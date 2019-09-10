@@ -57,6 +57,11 @@ READ = {
                 + "COUNT(1) AS num FROM task_vw t JOIN user u ON (u.name=t.user) "
                 + "WHERE project='%s' AND assignment_id IS NOT NULL GROUP BY 1,2,3,4",
     'PROJECTUA': "SELECT COUNT(1) AS num FROM task_vw WHERE project='%s' AND assignment_id IS NULL",
+    'PSUMMARY': "SELECT t.protocol,p.project_group,t.project,p.active,COUNT(1) AS num,"
+                + "p.disposition AS disposition,t.priority FROM task_vw t "
+                + "JOIN project_vw p ON (p.id=t.project_id) "
+                + "GROUP BY t.project,p.project_group,t.protocol "
+                + "ORDER BY t.priority,t.protocol,p.project_group,t.project",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
@@ -104,7 +109,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.5.4'
+__version__ = '0.5.5'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1301,7 +1306,7 @@ def profile():
     uprops.append(['Permissions:', '<br>'.join(rec['permissions'].split(','))])
     token = request.cookies.get(app.config['TOKEN'])
     return render_template('profile.html', urlroot=request.url_root, face=face,
-                           user=user, uprops=uprops, token=token)
+                           dataset=app.config['DATASET'], user=user, uprops=uprops, token=token)
 
 
 @app.route('/userlist')
@@ -1313,11 +1318,9 @@ def user_list():
                         + "redirect=/")
     user, face = get_web_profile()
     if not check_permission(user, 'admin'):
-        return render_template('error.html', urlroot=request.url_root,
-                               title='Permission error',
-                               message="You don't have permission to view authorized users")
+        return redirect("/profile")
     try:
-        g.c.execute('SELECT * FROM user_vw ORDER BY last,first')
+        g.c.execute('SELECT * FROM user_vw ORDER BY janelia_id')
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
@@ -1328,7 +1331,48 @@ def user_list():
         ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
                       row['email'], row['organization'], row['permissions']])
     return render_template('userlist.html', urlroot=request.url_root, face=face,
-                           user=user, users=ulist)
+                           dataset=app.config['DATASET'], user=user, users=ulist)
+
+
+@app.route('/userlist/<string:protocol>')
+def user_protocol_list(protocol):
+    ''' Allow users to be granted/denied a specific protocol
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=/")
+    user, face = get_web_profile()
+    if not check_permission(user, 'admin'):
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Permission error',
+                               message="You don't have permission to view another user's protocols")
+    try:
+        g.c.execute("SELECT display_name FROM cv_term_vw WHERE cv='protocol' "
+                    + "AND cv_term=%s", (protocol,))
+        rec = g.c.fetchone()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    if not rec:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Protocol error',
+                               message="Protocol %s does not exist" % protocol)
+    try:
+        g.c.execute('SELECT * FROM user_vw ORDER BY janelia_id')
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    ulist = []
+    for row in rows:
+        link = '<a href="/user/%s">%s</a>' % (row['name'], row['name'])
+        val = 'checked="checked"' if protocol in row['permissions'] else ''
+        check = '<input type="checkbox" %s id="%s" onchange="changebox(this,%s);">' \
+                 % (val, row['name'], "'" + protocol + "'")
+        ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
+                      row['organization'], check])
+    return render_template('userplist.html', urlroot=request.url_root, face=face,
+                           dataset=app.config['DATASET'], protocol=protocol, users=ulist)
 
 
 @app.route('/user/<string:uname>')
@@ -1359,7 +1403,8 @@ def user_config(uname):
     uprops.append(['Organization:', rec['organization']])
     ptable = build_protocols_table(rec)
     return render_template('user.html', urlroot=request.url_root, face=face,
-                           user=uname, uprops=uprops, ptable=ptable)
+                           dataset=app.config['DATASET'], user=uname, uprops=uprops,
+                           ptable=ptable)
 
 
 @app.route('/logout')
@@ -1382,9 +1427,52 @@ def logout():
     response.set_cookie(app.config['TOKEN'], '', domain='.janelia.org', expires=0)
     return response
 
+@app.route('/projectlist')
+def show_projects():
+    ''' Projects
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=" + request.url_root)
+    _, face = get_web_profile()
+    try:
+        g.c.execute(READ['PSUMMARY'])
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    if rows:
+        projects = '''
+        <table id="projects" class="tablesorter standard">
+        <thead>
+        <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Disposition</th><th>Priority</th><th>Active</th></tr>
+        </thead>
+        <tbody>
+        '''
+        template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
+                   + ''.join('<td style="text-align: center">%s</td>')*4 + "</tr>"
+        protocols = dict()
+        for row in rows:
+            rclass = ''
+            name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
+            rclass += ' ' + name
+            protocols[name] = row['protocol']
+            proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
+            active = "<span style='color:%s'>%s</span>" \
+                     % (('lime', 'YES') if row['active'] else ('red', 'NO'))
+            projects += template % (rclass, row['protocol'], row['project_group'], proj,
+                                    row['num'], row['disposition'], row['priority'], active)
+        projects += "</tbody></table>"
+
+    else:
+        projects = "There are no projects"
+    return render_template('projectlist.html', urlroot=request.url_root, face=face,
+                           dataset=app.config['DATASET'], protocols=protocols, projects=projects)
+
 
 @app.route('/')
-def show_summary():
+@app.route('/assignmentlist')
+def show_assignments():
     ''' Default route
     '''
     if not request.cookies.get(app.config['TOKEN']):
@@ -1400,9 +1488,7 @@ def show_summary():
     if request.cookies.get(app.config['TOKEN']):
         user, face = get_web_profile()
     proofreaders, assignments = build_assignment_table(user)
-    page_template = 'home.html'
     if check_permission(user, 'admin'):
-        page_template = 'home_admin.html'
         try:
             g.c.execute(READ['UPSUMMARY'])
             rows = g.c.fetchall()
@@ -1433,7 +1519,8 @@ def show_summary():
         unassigned = ''
     if not token:
         token = ''
-    response = make_response(render_template(page_template, urlroot=request.url_root, face=face,
+    response = make_response(render_template('assignmentlist.html', urlroot=request.url_root,
+                                             face=face, dataset=app.config['DATASET'],
                                              assignments=assignments, proofreaders=proofreaders,
                                              unassigned=unassigned))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
@@ -1486,8 +1573,8 @@ def show_project(pname):
     num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
     num_unassigned = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
     return render_template('project.html', urlroot=request.url_root, face=face,
-                           project=pname, pprops=pprops, controls=controls,
-                           total=num_tasks, num_unassigned=num_unassigned,
+                           dataset=app.config['DATASET'], project=pname, pprops=pprops,
+                           controls=controls, total=num_tasks, num_unassigned=num_unassigned,
                            num_assigned=num_assigned, assigned=assigned)
 
 
@@ -1536,8 +1623,8 @@ def show_assignment(aname):
         '''
         controls = controls % (assignment['id'])
     return render_template('assignment.html', urlroot=request.url_root, face=face,
-                           assignment=aname, aprops=aprops, controls=controls,
-                           tasks=tasks)
+                           dataset=app.config['DATASET'], assignment=aname, aprops=aprops,
+                           controls=controls, tasks=tasks)
 
 
 @app.route('/task/<string:task_id>')
@@ -1592,7 +1679,8 @@ def show_task(task_id):
     for row in rows:
         audit.append([row['disposition'], row['user'], row['create_date']])
     return render_template('task.html', urlroot=request.url_root, face=face,
-                           task=task_id, tprops=tprops, audit=audit)
+                           dataset=app.config['DATASET'], task=task_id,
+                           tprops=tprops, audit=audit)
 
 
 # *****************************************************************************
