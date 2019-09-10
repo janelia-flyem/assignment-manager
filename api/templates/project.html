@@ -60,5 +60,6 @@ onload="tableInitialize();"
   <h3>Unassigned tasks: {{ num_unassigned }}</h3>
   <br>
   <h3>Assigned tasks: {{ num_assigned }}</h3>
+  Durations in <span style='color:orange'>orange</span> are elapsed time since assignment start.
   {{ assigned|safe }}
 {% endblock %}

@@ -53,9 +53,11 @@ READ = {
                      + "FIELD(priority,'high','medium','low'),todo_type",
     'GET_ASSOCIATION': "SELECT object FROM cv_term_relationship_vw WHERE "
                        + "subject=%s AND relationship='associated_with'",
-    'PROJECTA': "SELECT t.user,CONCAT(first,' ',last) AS proofreader,assignment,disposition,"
-                + "COUNT(1) AS num FROM task_vw t JOIN user u ON (u.name=t.user) "
-                + "WHERE project='%s' AND assignment_id IS NOT NULL GROUP BY 1,2,3,4",
+    'PROJECTA': "SELECT t.user,CONCAT(first,' ',last) AS proofreader,assignment,t.disposition,"
+                + "COUNT(1) AS num,a.start_date,a.completion_date,a.duration,"
+                + "TIMEDIFF(NOW(),a.start_date) AS elapsed FROM task_vw t "
+                + "JOIN user u ON (u.name=t.user) JOIN assignment_vw a ON (t.assignment_id=a.id) "
+                + "WHERE t.project='%s' AND assignment_id IS NOT NULL GROUP BY 1,2,3,4,6,7,8,9",
     'PROJECTUA': "SELECT COUNT(1) AS num FROM task_vw WHERE project='%s' AND assignment_id IS NULL",
     'PSUMMARY': "SELECT t.protocol,p.project_group,t.project,p.active,COUNT(1) AS num,"
                 + "p.disposition AS disposition,t.priority FROM task_vw t "
@@ -109,7 +111,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.6.0'
+__version__ = '0.6.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -597,20 +599,26 @@ def get_assigned_tasks(tasks, user):
         assigned = '''
         <table id="ttasks" class="tablesorter standard">
         <thead>
-        <tr><th>User</th><th>Assignment</th><th>Disposition</th><th>Count</th></tr>
+        <tr><th>User</th><th>Assignment</th><th>Disposition</th><th>Count</th><th>Started</th><th>Completed</th><th>Duration</th></tr>
         </thead>
         <tbody>
         '''
         template = "<tr>" + ''.join('<td>%s</td>')*2 \
-                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+                   + ''.join('<td style="text-align: center">%s</td>')*5 + "</tr>"
         for task in tasks:
             num_assigned += int(task['num'])
             link = '<a href="/assignment/%s">%s</a>' % (task['assignment'], task['assignment'])
             if 'admin' not in permissions and task['user'] != user:
                 task['proofreader'] = '-'
                 link = task['assignment']
-            assigned += template % (task['proofreader'], link,
-                                    task['disposition'], task['num'])
+            duration = ''
+            if task['duration']:
+                duration = task['duration']
+            elif task['start_date']:
+                duration = "<span style='color:orange'>%s</span>" % task['elapsed']
+
+            assigned += template % (task['proofreader'], link, task['disposition'], task['num'],
+                                    task['start_date'], task['completion_date'], duration)
         assigned += "</tbody></table>"
     else:
         assigned = ''
@@ -1483,7 +1491,8 @@ def show_projects():
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
         return redirect("https://emdata1.int.janelia.org:15000/login?"
                         + "redirect=" + request.url_root)
-    _, face = get_web_profile()
+    user, face = get_web_profile()
+    permissions = check_permission(user)
     try:
         g.c.execute(READ['PSUMMARY'])
         rows = g.c.fetchall()
@@ -1502,6 +1511,8 @@ def show_projects():
                    + ''.join('<td style="text-align: center">%s</td>')*4 + "</tr>"
         protocols = dict()
         for row in rows:
+            if 'admin' not in permissions and row['protocol'] not in permissions:
+                continue
             rclass = ''
             name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
             rclass += ' ' + name
