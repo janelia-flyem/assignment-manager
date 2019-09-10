@@ -109,7 +109,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.5.5'
+__version__ = '0.6.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -168,6 +168,16 @@ def before_request():
             raise InvalidUsage(mess, 500)
         PRODUCER = KafkaProducer(bootstrap_servers=SERVER['Kafka']['broker_list'])
         assignment_utilities.BEARER = assignment_utilities.CONFIG['neuprint']['bearer']
+        try:
+            g.c.execute("SELECT cv_term,display_name FROM cv_term_vw WHERE "
+                        + "cv='protocol' ORDER BY 2")
+            rows = g.c.fetchall()
+        except Exception as err: # pragma: no cover
+            temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+            mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+            raise InvalidUsage(mess, 500)
+        for row in rows:
+            app.config['PROTOCOLS'][row['cv_term']] = row['display_name']
     START_TIME = time()
     app.config['COUNTER'] += 1
     endpoint = request.endpoint if request.endpoint else '(Unknown)'
@@ -1201,6 +1211,38 @@ def get_web_profile(token=None):
     return user, face
 
 
+def generate_navbar(active):
+    ''' Generate the web navigation bar
+        Keyword arguments:
+          active: name of active nav
+    '''
+    nav = '''
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+      <div class="collapse navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav mr-auto">
+    '''
+    for heading in ['Projects', 'Assignments', 'Tasks', 'Protocols', 'Users']:
+        if heading == 'Protocols':
+            nav += '<li class="nav-item dropdown active">' \
+                if heading == active else '<li class="nav-item">'
+            nav += '<a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" ' \
+                   + 'role="button" data-toggle="dropdown" aria-haspopup="true" ' \
+                   + 'aria-expanded="false">Protocols</a><div class="dropdown-menu" '\
+                   + 'aria-labelledby="navbarDropdown">'
+            for subhead in app.config['PROTOCOLS']:
+                if subhead in sys.modules:
+                    nav += '<a class="dropdown-item" href="/userlist/%s">%s</a>' \
+                           % (subhead, app.config['PROTOCOLS'][subhead])
+            nav += '</div></li>'
+        else:
+            nav += '<li class="nav-item active">' if heading == active else '<li class="nav-item">'
+            link = ('/' + heading[:-1] + 'list').lower()
+            nav += '<a class="nav-link" href="%s">%s</a>' % (link, heading)
+            nav += '</li>'
+    nav += '</ul></div></nav>'
+    return nav
+
+
 def publish_kafka(topic, result, message):
     ''' Publish a message to Kafka
         Keyword arguments:
@@ -1305,8 +1347,10 @@ def profile():
     uprops.append(['Organization:', rec['organization']])
     uprops.append(['Permissions:', '<br>'.join(rec['permissions'].split(','))])
     token = request.cookies.get(app.config['TOKEN'])
+    navbar = generate_navbar('Users')
     return render_template('profile.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], user=user, uprops=uprops, token=token)
+                           dataset=app.config['DATASET'], user=user, navbar=navbar,
+                           uprops=uprops, token=token)
 
 
 @app.route('/userlist')
@@ -1330,8 +1374,10 @@ def user_list():
         link = '<a href="/user/%s">%s</a>' % (row['name'], row['name'])
         ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
                       row['email'], row['organization'], row['permissions']])
+    navbar = generate_navbar('Users')
     return render_template('userlist.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], user=user, users=ulist)
+                           dataset=app.config['DATASET'], user=user, navbar=navbar,
+                           users=ulist)
 
 
 @app.route('/userlist/<string:protocol>')
@@ -1371,8 +1417,10 @@ def user_protocol_list(protocol):
                  % (val, row['name'], "'" + protocol + "'")
         ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
                       row['organization'], check])
+    navbar = generate_navbar('Protocols')
     return render_template('userplist.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], protocol=protocol, users=ulist)
+                           dataset=app.config['DATASET'], navbar=navbar,
+                           protocol=protocol, users=ulist)
 
 
 @app.route('/user/<string:uname>')
@@ -1402,9 +1450,10 @@ def user_config(uname):
     uprops.append(['Janelia ID:', rec['janelia_id']])
     uprops.append(['Organization:', rec['organization']])
     ptable = build_protocols_table(rec)
+    navbar = generate_navbar('Users')
     return render_template('user.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], user=uname, uprops=uprops,
-                           ptable=ptable)
+                           dataset=app.config['DATASET'], user=uname, navbar=navbar,
+                           uprops=uprops, ptable=ptable)
 
 
 @app.route('/logout')
@@ -1466,8 +1515,10 @@ def show_projects():
 
     else:
         projects = "There are no projects"
+    navbar = generate_navbar('Projects')
     return render_template('projectlist.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], protocols=protocols, projects=projects)
+                           dataset=app.config['DATASET'], navbar=navbar,
+                           protocols=protocols, projects=projects)
 
 
 @app.route('/')
@@ -1519,10 +1570,11 @@ def show_assignments():
         unassigned = ''
     if not token:
         token = ''
+    navbar = generate_navbar('Assignments')
     response = make_response(render_template('assignmentlist.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
-                                             assignments=assignments, proofreaders=proofreaders,
-                                             unassigned=unassigned))
+                                             navbar=navbar, assignments=assignments,
+                                             proofreaders=proofreaders, unassigned=unassigned))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
 
@@ -1572,10 +1624,12 @@ def show_project(pname):
     num_tasks = num_assigned + num_unassigned
     num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
     num_unassigned = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
+    navbar = generate_navbar('Projects')
     return render_template('project.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], project=pname, pprops=pprops,
-                           controls=controls, total=num_tasks, num_unassigned=num_unassigned,
-                           num_assigned=num_assigned, assigned=assigned)
+                           dataset=app.config['DATASET'], navbar=navbar, project=pname,
+                           pprops=pprops, controls=controls, total=num_tasks,
+                           num_unassigned=num_unassigned, num_assigned=num_assigned,
+                           assigned=assigned)
 
 
 @app.route('/assignment/<string:aname>')
@@ -1622,9 +1676,10 @@ def show_assignment(aname):
         <button type="button" class="btn btn-danger btn-sm" onclick='modify_assignment(%s,"deleted");'>Delete assignment</button>
         '''
         controls = controls % (assignment['id'])
+    navbar = generate_navbar('Assignments')
     return render_template('assignment.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], assignment=aname, aprops=aprops,
-                           controls=controls, tasks=tasks)
+                           dataset=app.config['DATASET'], navbar=navbar, assignment=aname,
+                           aprops=aprops, controls=controls, tasks=tasks)
 
 
 @app.route('/task/<string:task_id>')
@@ -1678,8 +1733,9 @@ def show_task(task_id):
     audit = []
     for row in rows:
         audit.append([row['disposition'], row['user'], row['create_date']])
+    navbar = generate_navbar('Tasks')
     return render_template('task.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], task=task_id,
+                           dataset=app.config['DATASET'], navbar=navbar, task=task_id,
                            tprops=tprops, audit=audit)
 
 

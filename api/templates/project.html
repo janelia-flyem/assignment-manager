@@ -45,24 +45,7 @@ onload="tableInitialize();"
 {% endblock %}
 
 {% block content %}
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="collapse navbar-collapse" id="navbarSupportedContent">
-      <ul class="navbar-nav mr-auto">
-        <li class="nav-item active">
-          <a class="nav-link" href="/projectlist">Projects <span class="sr-only">(current)</span></a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/assignmentlist">Assignments</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/tasklist">Tasks</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/userlist">Users</a>
-        </li>
-      </ul>
-    </div>
-  </nav>
+  {{navbar|safe}}
   <h3>{{ project }}</h3>
   <table id='projectprops' class="property">
   <tbody>
