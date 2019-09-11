@@ -340,7 +340,10 @@ CREATE OR REPLACE VIEW project_stats_vw AS
 SELECT
     a.user AS user,
     CONCAT(u.first,' ',u.last) AS proofreader,
-    a.project,a.name AS assignment,
+    a.project,
+    a.name AS assignment,
+    a.start_date AS start_date,
+    a.completion_date AS completion_date,
     a.protocol,
     GROUP_CONCAT(DISTINCT IFNULL(t.disposition,'NULL')) AS task_disposition,
     COUNT(t.id) AS tasks

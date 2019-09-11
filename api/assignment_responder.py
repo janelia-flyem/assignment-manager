@@ -931,11 +931,11 @@ def build_assignment_table(user):
         assignments = """
         <table id="assignments" class="tablesorter standard">
         <thead>
-        <tr><th>Proofreader</th><th>Project</th><th>Protocol</th><th>Assignment</th><th>Task disposition</th><th>Task count</th></tr>
+        <tr><th>Proofreader</th><th>Project</th><th>Protocol</th><th>Assignment</th><th>Started</th><th>Completed</th><th>Task disposition</th><th>Task count</th></tr>
         </thead>
         <tbody>
         """
-        template = '<tr class="%s">' + ''.join("<td>%s</td>")*4 \
+        template = '<tr class="%s">' + ''.join("<td>%s</td>")*6 \
                    + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
         for row in rows:
             rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
@@ -947,8 +947,8 @@ def build_assignment_table(user):
             proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             assn = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
             assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
-                                       assn, row['task_disposition'],
-                                       row['tasks'])
+                                       assn, row['start_date'], row['completion_date'],
+                                       row['task_disposition'], row['tasks'])
         assignments += "</tbody></table>"
     else:
         assignments = "There are no open assignments"

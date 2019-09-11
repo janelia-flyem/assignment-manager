@@ -7,10 +7,8 @@
 function show_all() {
   $(".open").show();
   $(".complete").show();
-  $(".notstarted").show();
   $('#hc').removeAttr("disabled");
   $('#ho').removeAttr("disabled");
-  $('#hn').removeAttr("disabled");
   $('#proofreader').val('all');
 }
 
@@ -26,7 +24,6 @@ function select_proofreader(sel) {
   });
   $('#hc').removeAttr("disabled");
   $('#ho').removeAttr("disabled");
-  $('#hn').removeAttr("disabled");
 }
 </script>
 {% endblock %}
@@ -41,7 +38,6 @@ onload="tableInitialize();"
   <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
   <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
   <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button>
-  <button id="hn" type="button" class="btn btn-primary btn-sm" onclick='$(".notstarted").hide(); $("#hn").attr("disabled", true);'>Hide not started</button>
   Select proofreader:
   <select id="proofreader" onchange='select_proofreader(this);'>
     <option value="all" SELECTED>All proofreaders</a>
