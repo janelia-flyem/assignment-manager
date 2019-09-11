@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="#">User protocol list</a></li>
+{% endblock %}
+{% block script %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
+<script>
+function changebox(cb,permission) {
+  user = cb.id; 
+  if (cb.checked == true) {
+    atype = 'POST'; 
+    operation = 'granted';
+  } 
+  else {
+    atype = 'DELETE';
+    operation = 'removed';
+  } 
+  token = $.cookie('assignment-manager-token')
+  $.ajax({
+      url: '/user_permissions',
+      headers: {"Authorization": 'Bearer ' + token },
+      type: atype,
+      dataType: 'json',
+      data: JSON.stringify({"name": user,
+             "permissions": [permission]}),
+      contentType:'application/json',
+      success: function(result) {
+        alert(permission + " permission is " + operation);
+      },
+      error: function (xhr, ajaxOptions, thrownError) {
+        if (xhr.status == 401) {
+          alert("You are not authenticated");
+        } 
+        else {
+          alert(xhr.status + ': ' + thrownError);
+        } 
+      } 
+  }); 
+} 
+</script>
+{% endblock %}
+{% block css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
+{% endblock %}
+{% block onload %}
+onload="tableInitialize();"
+{% endblock %}
+
+{% block content %}
+  {{navbar|safe}}
+  <h2>{{protocol}}</h2>
+  <table id="users" class="tablesorter standard">
+  <thead>
+    <tr><th>User</th><th>Name</th><th>Janelia ID</th><th>Organization</th><th>Permission</th></tr>
+  </thead>
+  <tbody>
+  {% for row in users %}
+    <tr><td>{{row[0]}}</td><td>{{row[1]|safe}}</td><td>{{row[2]}}</td><td>{{row[3]}}</td><td>{{row[4]|safe}}</td></td></tr>
+  {% endfor %}
+  </tbody>
+  </table>
+{% endblock %}

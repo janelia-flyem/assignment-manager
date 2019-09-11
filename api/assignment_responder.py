@@ -60,11 +60,14 @@ READ = {
                 + "WHERE t.project='%s' AND assignment_id IS NOT NULL GROUP BY 1,2,3,4,6,7,8,9",
     'PROJECTUA': "SELECT COUNT(1) AS num FROM task_vw WHERE project='%s' AND assignment_id IS NULL",
     'PSUMMARY': "SELECT t.protocol,p.project_group,t.project,p.active,COUNT(1) AS num,"
-                + "p.disposition AS disposition,t.priority FROM task_vw t "
+                + "p.disposition AS disposition,t.priority,p.create_date FROM task_vw t "
                 + "JOIN project_vw p ON (p.id=t.project_id) "
                 + "GROUP BY t.project,p.project_group,t.protocol "
-                + "ORDER BY t.priority,t.protocol,p.project_group,t.project",
+                + "ORDER BY t.priority,t.protocol,p.create_date,p.project_group,t.project",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
+    'TASKS': "SELECT id,project,assignment,protocol,priority,start_date,completion_date,"
+             + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE user=%s "
+             + "AND assignment IS NOT NULL ORDER BY start_date,priority,protocol",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
                         + "assignment_id IS NULL ORDER BY id",
@@ -111,7 +114,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.6.1'
+__version__ = '0.6.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -936,6 +939,8 @@ def build_assignment_table(user):
                    + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
         for row in rows:
             rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
+            if not row['task_disposition']:
+                rclass = 'notstarted'
             name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
             rclass += ' ' + name
             proofreaders[name] = row['proofreader']
@@ -1148,6 +1153,8 @@ def build_task_table(aname):
             duration = "<span style='color:orange'>%s</span>" % row['elapsed']
         id_link = '<a href="/task/%s">%s</a>' % (row['id'], row['id'])
         rclass = 'complete' if row['completion_date'] else 'open'
+        if not row['disposition']:
+            rclass = 'notstarted'
         tasks += template % (rclass, id_link, row['key_text'], row['create_date'],
                              row['disposition'], row['start_date'], row['completion_date'],
                              duration)
@@ -1503,17 +1510,19 @@ def show_projects():
         projects = '''
         <table id="projects" class="tablesorter standard">
         <thead>
-        <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Disposition</th><th>Priority</th><th>Active</th></tr>
+        <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Disposition</th><th>Priority</th><th>Created</th><th>Active</th></tr>
         </thead>
         <tbody>
         '''
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
-                   + ''.join('<td style="text-align: center">%s</td>')*4 + "</tr>"
+                   + ''.join('<td style="text-align: center">%s</td>')*5 + "</tr>"
         protocols = dict()
         for row in rows:
             if 'admin' not in permissions and row['protocol'] not in permissions:
                 continue
-            rclass = ''
+            rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
+            if not row['disposition']:
+                rclass = 'notstarted'
             name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
             rclass += ' ' + name
             protocols[name] = row['protocol']
@@ -1521,7 +1530,8 @@ def show_projects():
             active = "<span style='color:%s'>%s</span>" \
                      % (('lime', 'YES') if row['active'] else ('red', 'NO'))
             projects += template % (rclass, row['protocol'], row['project_group'], proj,
-                                    row['num'], row['disposition'], row['priority'], active)
+                                    row['num'], row['disposition'], row['priority'],
+                                    row['create_date'], active)
         projects += "</tbody></table>"
 
     else:
@@ -1588,6 +1598,53 @@ def show_assignments():
                                              proofreaders=proofreaders, unassigned=unassigned))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
+
+
+@app.route('/tasklist')
+def show_tasks():
+    ''' Projects
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=" + request.url_root)
+    user, face = get_web_profile()
+    try:
+        g.c.execute(READ['TASKS'], user)
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    if rows:
+        tasks = '''
+        <table id="projects" class="tablesorter standard">
+        <thead>
+        <tr><th>Task</th><th>Project</th><th>Assignment</th><th>Priority</th><th>Started</th><th>Completed</th><th>Disposition</th><th>Duration</th></tr>
+        </thead>
+        <tbody>
+        '''
+        template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
+                   + ''.join('<td style="text-align: center">%s</td>')*5 + "</tr>"
+        protocols = dict()
+        for row in rows:
+            rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
+            if not row['start_date']:
+                rclass = 'notstarted'
+            name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
+            rclass += ' ' + name
+            protocols[name] = row['protocol']
+            proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
+            assign = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
+            tasks += template % (rclass, row['id'], proj, assign, row['priority'],
+                                 row['start_date'], row['completion_date'], row['disposition'],
+                                 row['duration'])
+        tasks += "</tbody></table>"
+
+    else:
+        tasks = "You have no assigned tasks"
+    navbar = generate_navbar('Tasks')
+    return render_template('tasklist.html', urlroot=request.url_root, face=face,
+                           dataset=app.config['DATASET'], navbar=navbar,
+                           protocols=protocols, tasks=tasks)
 
 
 @app.route('/project/<string:pname>')
