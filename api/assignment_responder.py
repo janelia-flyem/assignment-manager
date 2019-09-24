@@ -114,7 +114,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.6.2'
+__version__ = '0.7'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -822,7 +822,7 @@ def generate_assignment(ipd, result):
     if updated != num_tasks:
         raise InvalidUsage("Could not assign tasks for project %s" % ipd['project_name'], 500)
     result['rest']['assigned_tasks'] = updated
-    if 'start' in ipd:
+    if 'start' in ipd and ipd['start']:
         ipd['id'] = result['rest']['inserted_id']
         start_assignment(ipd, result)
     g.db.commit()
@@ -927,6 +927,7 @@ def build_assignment_table(user):
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     proofreaders = dict()
+    protocols = dict()
     if rows:
         assignments = """
         <table id="assignments" class="tablesorter standard">
@@ -944,6 +945,9 @@ def build_assignment_table(user):
             name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
             rclass += ' ' + name
             proofreaders[name] = row['proofreader']
+            name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
+            rclass += ' ' + name
+            protocols[name] = row['protocol']
             proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             assn = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
             assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
@@ -952,7 +956,7 @@ def build_assignment_table(user):
         assignments += "</tbody></table>"
     else:
         assignments = "There are no open assignments"
-    return proofreaders, assignments
+    return proofreaders, assignments, protocols
 
 
 def get_task_by_key(pid, key_type, key):
@@ -1491,6 +1495,7 @@ def logout():
     response.set_cookie(app.config['TOKEN'], '', domain='.janelia.org', expires=0)
     return response
 
+
 @app.route('/projectlist')
 def show_projects():
     ''' Projects
@@ -1559,7 +1564,7 @@ def show_assignments():
     face = ''
     if request.cookies.get(app.config['TOKEN']):
         user, face = get_web_profile()
-    proofreaders, assignments = build_assignment_table(user)
+    proofreaders, assignments, protocols = build_assignment_table(user)
     if check_permission(user, 'admin'):
         try:
             g.c.execute(READ['UPSUMMARY'])
@@ -1572,18 +1577,21 @@ def show_assignments():
             <h2>Projects with unassigned tasks</h2>
             <table id="unassigned" class="tablesorter standard">
             <thead>
-            <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Priority</th><th>Active</th></tr>
+            <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Priority</th><th>Active</th><th>Assignment</th></tr>
             </thead>
             <tbody>
             '''
             template = "<tr>" + ''.join("<td>%s</td>")*3 \
-                       + ''.join('<td style="text-align: center">%s</td>')*3 + "</tr>"
+                       + ''.join('<td style="text-align: center">%s</td>')*4 + "</tr>"
             for row in rows:
-                proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
                 active = "<span style='color:%s'>%s</span>" \
                          % (('lime', 'YES') if row['active'] else ('red', 'NO'))
-                unassigned += template % (row['protocol'], row['project_group'], proj,
-                                          row['num'], row['priority'], active)
+                button = '<a class="btn btn-success btn-tiny" style="color:#fff" href="' \
+                         + '/assignto/' + row['project'] + '" role="button">Create</a>'
+                unassigned += template % (row['protocol'], row['project_group'],
+                                          ('<a href="/project/%s">%s</a>' % (row['project'], \
+                                           row['project'])),
+                                          row['num'], row['priority'], active, button)
             unassigned += "</tbody></table>"
         else:
             unassigned = "There are no projects with unassigned tasks"
@@ -1595,7 +1603,8 @@ def show_assignments():
     response = make_response(render_template('assignmentlist.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
                                              navbar=navbar, assignments=assignments,
-                                             proofreaders=proofreaders, unassigned=unassigned))
+                                             protocols=protocols, proofreaders=proofreaders,
+                                             unassigned=unassigned))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
 
@@ -1691,12 +1700,16 @@ def show_project(pname):
     num_unassigned = tasks['num'] if tasks else 0
     num_tasks = num_assigned + num_unassigned
     num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
-    num_unassigned = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
+    num_unassignedt = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
+    if num_unassigned and check_permission(user, 'admin'):
+        button = '<a class="btn btn-success btn-sm" style="color:#fff" href="' \
+                 + '/assignto/' + pname + '" role="button">Create assignment</a>'
+        num_unassignedt += ' ' + button
     navbar = generate_navbar('Projects')
     return render_template('project.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, project=pname,
                            pprops=pprops, controls=controls, total=num_tasks,
-                           num_unassigned=num_unassigned, num_assigned=num_assigned,
+                           num_unassigned=num_unassignedt, num_assigned=num_assigned,
                            assigned=assigned)
 
 
@@ -1805,6 +1818,43 @@ def show_task(task_id):
     return render_template('task.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, task=task_id,
                            tprops=tprops, audit=audit)
+
+
+@app.route('/assignto/<string:pname>')
+def assign_to(pname):
+    ''' Make an assignment for a project
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=" + request.url_root)
+    user, face = get_web_profile()
+    project = ''
+    if not check_permission(user, 'admin'):
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Permission error',
+                               message="You don't have permission to make assignments")
+    project = get_project_by_name_or_id(pname)
+    if not project:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Project not found',
+                               message="Project %s was not found" % pname)
+    try:
+        g.c.execute('SELECT * FROM user_vw uv JOIN user_permission_vw upv ON (uv.name=upv.name) '
+                    + 'WHERE permission=%s ORDER BY janelia_id', project['protocol'])
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    proofreaders = dict()
+    for row in rows:
+        uname = ' '.join([row['first'], row['last']])
+        proofreaders[row['name']] = uname
+    constructor = globals()[project['protocol'].capitalize()]
+    projectins = constructor()
+    navbar = generate_navbar('Projects')
+    return render_template('assignto.html', urlroot=request.url_root, face=face,
+                           dataset=app.config['DATASET'], navbar=navbar, project=project['name'],
+                           proofreaders=proofreaders, num_tasks=projectins.num_tasks)
 
 
 # *****************************************************************************
@@ -3156,7 +3206,7 @@ def new_assignment(project_name):
     # Get payload
     ipd = receive_payload(result)
     ipd['project_name'] = project_name
-    if 'name' not in ipd:
+    if not('name' in ipd and ipd['name'] != ''):
         ipd['name'] = ' '.join([project_name, random_string()])
     generate_assignment(ipd, result)
     return generate_response(result)

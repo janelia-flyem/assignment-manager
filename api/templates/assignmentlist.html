@@ -1,7 +1,4 @@
 {% extends "base.html" %}
-{% block css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
-{% endblock %}
 {% block script %}
 <script>
 function show_all() {
@@ -10,11 +7,25 @@ function show_all() {
   $('#hc').removeAttr("disabled");
   $('#ho').removeAttr("disabled");
   $('#proofreader').val('all');
+  $('#protocol').val('all');
 }
 
 function select_proofreader(sel) {
   selected = sel.value
   $("#proofreader > option").each(function() {
+    if (selected == 'all' || selected == this.value) {
+      $("."+this.value).show()
+    }
+    else {
+      $("."+this.value).hide()
+    }
+  });
+  $('#hc').removeAttr("disabled");
+  $('#ho').removeAttr("disabled");
+}
+function select_protocol(sel) {
+  selected = sel.value
+  $("#protocol > option").each(function() {
     if (selected == 'all' || selected == this.value) {
       $("."+this.value).show()
     }
@@ -33,11 +44,18 @@ onload="tableInitialize();"
 
 {% block content %}
   {{navbar|safe}}
-  <h2>Assignments </h2>
+  <h2>Assignments</h2>
   <div>
   <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
   <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
   <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button>
+  Select protocol:
+  <select id="protocol" onchange='select_protocol(this);'>
+    <option value="all" SELECTED>All protocols</a>
+    {% for pro in protocols %}
+        <option value="{{pro}}">{{protocols[pro]}}</option>"
+    {% endfor %}
+  </select>
   Select proofreader:
   <select id="proofreader" onchange='select_proofreader(this);'>
     <option value="all" SELECTED>All proofreaders</a>

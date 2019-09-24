@@ -28,6 +28,13 @@ table.standard {
   border-radius: 50%;
 }
 
+/* Bootstrap */
+.btn-tiny {
+    padding: 2px 2px;
+    font-size: 11px;
+    border-radius: 5px;
+}
+
 /* General */
 body {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;

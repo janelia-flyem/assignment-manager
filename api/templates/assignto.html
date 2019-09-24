@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/assignto.css') }}">
+{% endblock %}
+{% block script %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
+<script>
+function create_assignment() {
+  url = "http://svirskasr-wm2.janelia.org/assignment/" + $('#project_name').val();
+  token = $.cookie('assignment-manager-token')
+  start = $("#start").prop("checked") ? 1 : 0;
+  $.ajax({
+    url: url,
+    headers: {"Authorization": 'Bearer ' + token },
+    type: 'POST',
+    dataType: 'json',
+    data: JSON.stringify({"name": $('#name').val(),
+                          "note": $('#note').val(),
+                          "tasks": $('#tasks').val(),
+                          "start": start,
+                          "user": $('#proofreader').children("option:selected").val()}),
+    contentType:'application/json',
+    success: function(result) {
+      alert("Tasks assigned to " + $('#proofreader').children("option:selected").text());
+    },
+    error: function (xhr, ajaxOptions, thrownError) {
+      if (xhr.status == 401) {
+        alert("You are not authenticated");
+      }
+      else {
+        alert(xhr.status + ': ' + thrownError);
+      }
+    }
+  });
+}
+</script>
+{% endblock %}
+{% block content %}
+  {{navbar|safe}}
+  <h2>Create assignment for project {{project}} </h2>
+  <div class="grid-container" width="500">
+    <div class="grid-item">Select proofreader:</div>
+    <div class="grid-item">
+      <select id="proofreader" onchange='select_proofreader(this);'>
+        {% for prf in proofreaders %}
+          <option value="{{prf}}">{{proofreaders[prf]}}</option>"
+        {% endfor %}
+      </select>
+    </div>
+    <div class="grid-item">Assignment name:</div>
+    <div class="grid-item"><input id="name"> (optional)</div>
+    <div class="grid-item">Number of tasks:</div>
+    <div class="grid-item"><input id="tasks" value={{num_tasks}} size=3></div>
+    <div class="grid-item">Start assignment:</div>
+    <div class="grid-item"><input type="checkbox" checked="checked" id="start"></div>
+    <div class="grid-item">Note:</div>
+    <div class="grid-item"><input id="note" size=30> (optional)</div>
+  </div>
+  <br>
+  <input type="hidden" id="project_name" value="{{project}}">
+  <button type="submit" class="btn btn-primary" onclick="create_assignment(); href='#'">Create assignment</button>
+{% endblock %}
