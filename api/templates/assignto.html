@@ -6,7 +6,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
 <script>
 function create_assignment() {
-  url = "http://svirskasr-wm2.janelia.org/assignment/" + $('#project_name').val();
+  url = "/assignment/" + $('#project_name').val();
   token = $.cookie('assignment-manager-token')
   start = $("#start").prop("checked") ? 1 : 0;
   $.ajax({
