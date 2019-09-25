@@ -114,7 +114,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.7'
+__version__ = '0.7.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1586,7 +1586,8 @@ def show_assignments():
             for row in rows:
                 active = "<span style='color:%s'>%s</span>" \
                          % (('lime', 'YES') if row['active'] else ('red', 'NO'))
-                button = '<a class="btn btn-success btn-tiny" style="color:#fff" href="' \
+                button = '' if not row['active'] else \
+                         '<a class="btn btn-success btn-tiny" style="color:#fff" href="' \
                          + '/assignto/' + row['project'] + '" role="button">Create</a>'
                 unassigned += template % (row['protocol'], row['project_group'],
                                           ('<a href="/project/%s">%s</a>' % (row['project'], \

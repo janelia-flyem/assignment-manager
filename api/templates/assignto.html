@@ -21,14 +21,22 @@ function create_assignment() {
                           "user": $('#proofreader').children("option:selected").val()}),
     contentType:'application/json',
     success: function(result) {
-      alert("Tasks assigned to " + $('#proofreader').children("option:selected").text());
+      console.log(result);
+      alert(result.rest.assigned_tasks + " task(s) assigned to "
+            + $('#proofreader').children("option:selected").text());
     },
-    error: function (xhr, ajaxOptions, thrownError) {
+    error: function(xhr, ajaxOptions, thrownError, dataType) {
       if (xhr.status == 401) {
         alert("You are not authenticated");
       }
       else {
-        alert(xhr.status + ': ' + thrownError);
+        try {
+          data = JSON.parse(xhr.responseText);
+          alert(xhr.status + ': ' + thrownError + "\n" + data.rest.error);
+        }
+        catch {
+          alert(xhr.status + ': ' + thrownError);
+        }
       }
     }
   });
