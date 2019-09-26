@@ -2011,6 +2011,33 @@ def stats():
     return generate_response(result)
 
 
+@app.route("/dbstats")
+def dbstats():
+    '''
+    Show database stats
+    Show database statistics
+    ---
+    tags:
+      - Diagnostics
+    responses:
+      200:
+          description: Database tats
+      400:
+          description: Database stats could not be calculated
+    '''
+    result = initialize_result()
+    sql = "SELECT TABLE_NAME,TABLE_ROWS FROM INFORMATION_SCHEMA.TABLES WHERE " \
+          + "TABLE_SCHEMA='assignment' AND TABLE_NAME NOT LIKE '%vw'"
+    g.c.execute(sql)
+    rows = g.c.fetchall()
+    result['rest']['row_count'] = len(rows)
+    result['rest']['sql_statement'] = g.c.mogrify(sql)
+    result['data'] = dict()
+    for r in rows:
+        result['data'][r['TABLE_NAME']] = r['TABLE_ROWS']
+    return generate_response(result)
+
+
 @app.route('/processlist/columns', methods=['GET'])
 def get_processlist_columns():
     '''

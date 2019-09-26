@@ -9,6 +9,10 @@ function create_assignment() {
   url = "/assignment/" + $('#project_name').val();
   token = $.cookie('assignment-manager-token')
   start = $("#start").prop("checked") ? 1 : 0;
+  $('#sb').html(
+    `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Assigning...`
+  );
+  $('#sb').prop('disabled', true);
   $.ajax({
     url: url,
     headers: {"Authorization": 'Bearer ' + token },
@@ -21,15 +25,21 @@ function create_assignment() {
                           "user": $('#proofreader').children("option:selected").val()}),
     contentType:'application/json',
     success: function(result) {
+      $('#sb').html('Create assignment');
       console.log(result);
       alert(result.rest.assigned_tasks + " task(s) assigned to "
             + $('#proofreader').children("option:selected").text());
+      $('#sb').prop('disabled', false);
     },
     error: function(xhr, ajaxOptions, thrownError, dataType) {
       if (xhr.status == 401) {
+        $('#sb').html('Create assignment');
         alert("You are not authenticated");
+        $('#sb').prop('disabled', false);
       }
       else {
+        $('#sb').html('Create assignment');
+        $('#sb').prop('disabled', false);
         try {
           data = JSON.parse(xhr.responseText);
           alert(xhr.status + ': ' + thrownError + "\n" + data.rest.error);
@@ -66,5 +76,5 @@ function create_assignment() {
   </div>
   <br>
   <input type="hidden" id="project_name" value="{{project}}">
-  <button type="submit" class="btn btn-primary" onclick="create_assignment(); href='#'">Create assignment</button>
+  <button type="submit" id="sb" class="btn btn-primary" onclick="create_assignment(); href='#'">Create assignment</button>
 {% endblock %}
