@@ -399,7 +399,6 @@ def receive_payload(result):
             for i in request.form:
                 pay[i] = request.form[i]
         elif request.json:
-            print("JSON")
             result['rest']['json'] = request.json
             pay = request.json
     except Exception as err:
