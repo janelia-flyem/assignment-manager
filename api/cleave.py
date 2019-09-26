@@ -13,10 +13,9 @@ class Cleave:
         self.task_populate_method = 'query_neuprint'
         self.unit = 'body_id'
         self.cypher_unit = 'bodyId'
-        self.allowable_filters = []
-        self.optional_properties = ['size', 'roi', 'status', 'note', 'group']
+        self.allowable_filters = ['post', 'pre', 'size']
+        self.optional_properties = ['roi', 'status', 'note', 'group']
         self.task_insert_props = ['cluster_name', 'post', 'pre', 'status']
-
 
     def cypher(self, result, ipd, source):
         '''
@@ -28,32 +27,43 @@ class Cleave:
           source: neuprint source
         '''
         perfstart = datetime.now()
-        assert 'size' in ipd and ipd['size'], \
+        assert 'roi' in ipd and ipd['roi'], \
                "Cannot generate orphan_link Cypher query: missing ROI"
-        size_clause = "(n.size>=" + str(ipd['size']) + ")"
-        roi_clause = where_clause = ''
+        clauses = []
+        filt_clause = ''
+        clause_list = []
+        for filt in self.allowable_filters:
+            if filt in ipd and ipd[filt]:
+                clause_list.append("(n.%s>=%s)" % (filt, str(ipd[filt])))
+        if (len(clause_list)):
+            filt_clause = '(' + ' AND '.join(clause_list) + ')'
+            clauses.append(filt_clause)
+        roi_clause = ''
         if 'roi' in ipd:
             in_list = ipd['roi'].split(',')
             clause_list = []
             for this_val in in_list:
                 clause_list.append('n.`' + this_val + '`=true')
-            roi_clause = ' AND (' + ' OR '.join(clause_list) + ')'
+            roi_clause = ' (' + ' OR '.join(clause_list) + ')'
         else:
             ipd['roi'] = ''
-        status_clause = " AND (n.status=\"0.5assign\" OR n.status=\"Leaves\" " \
+        clauses.append(roi_clause)
+        status_clause = "(n.status=\"0.5assign\" OR n.status=\"Leaves\" " \
                         + "OR NOT EXISTS(n.status))"
-        if 'status' in ipd:
+        if 'status' in ipd and ipd['status']:
             in_list = ipd['status'].split(',')
             clause_list = []
             for this_val in in_list:
                 clause_list.append("n.status=\"" + this_val + "\"")
-            status_clause = ' AND (' + ' OR '.join(clause_list) + ')'
+            status_clause = '(' + ' OR '.join(clause_list) + ')'
         else:
             ipd['status'] = ''
-        where_clause = roi_clause + status_clause
-        payload = {"cypher" : "MATCH (n:`" + source + "`) WHERE " + size_clause \
-                   + where_clause + " RETURN n ORDER BY n.size DESC"}
+        clauses.append(status_clause)
+        where_clause = ' AND '.join(clauses)
+        payload = {"cypher" : "MATCH (n:`" + source + "`) WHERE " + where_clause \
+                   + " RETURN n ORDER BY n.size DESC"}
         result['rest']['cypher'] = payload['cypher']
+        print(payload['cypher'])
         try:
             response = call_responder('neuprint', 'custom/custom', payload)
         except Exception as err:

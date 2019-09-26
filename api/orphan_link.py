@@ -15,17 +15,35 @@ class Orphan_link:
     def cypher(self, result, ipd, source):
         '''
         Given an optional ROI and status, generate the Cypher query
+          self: object
+          result: result dictionary
+          ipd: input parameters
+          source: neuprint source
         '''
         perfstart = datetime.now()
         assert 'roi' in ipd and ipd['roi'], \
                "Cannot generate orphan_link Cypher query: missing ROI"
-        in_list = ipd['roi'].split(',')
+        clauses = []
+        filt_clause = ''
         clause_list = []
-        for this_val in in_list:
-            clause_list.append('n.`' + this_val + '`=true')
-        roi_clause = '(' + ' OR '.join(clause_list) + ') AND '
+        for filt in self.allowable_filters:
+            if filt in ipd and ipd[filt]:
+                clause_list.append("(n.%s>=%s)" % (filt, str(ipd[filt])))
+        if (len(clause_list)):
+            filt_clause = '(' + ' AND '.join(clause_list) + ')'
+            clauses.append(filt_clause)
+        roi_clause = ''
+        if 'roi' in ipd:
+            in_list = ipd['roi'].split(',')
+            clause_list = []
+            for this_val in in_list:
+                clause_list.append('n.`' + this_val + '`=true')
+            roi_clause = '(' + ' OR '.join(clause_list) + ')' 
+        else:
+            ipd['roi'] = ''
+        clauses.append(roi_clause)
         status_clause = "(n.status=\"0.5assign\" or NOT EXISTS(n.status))"
-        if 'status' in ipd:
+        if 'status' in ipd and ipd['status']:
             in_list = ipd['status'].split(',')
             clause_list = []
             for this_val in in_list:
@@ -33,9 +51,12 @@ class Orphan_link:
             status_clause = '(' + ' OR '.join(clause_list) + ')'
         else:
             ipd['status'] = ''
-        payload = {"cypher" : "MATCH (n:`" + source + "`) WHERE " + roi_clause \
-                   + status_clause + " RETURN n ORDER BY n.size DESC"}
+        clauses.append(status_clause)
+        where_clause = ' AND '.join(clauses)
+        payload = {"cypher" : "MATCH (n:`" + source + "`) WHERE " + where_clause \
+                   + " RETURN n ORDER BY n.size DESC"}
         result['rest']['cypher'] = payload['cypher']
+        print(payload['cypher'])
         try:
             response = call_responder('neuprint', 'custom/custom', payload)
         except Exception as err:

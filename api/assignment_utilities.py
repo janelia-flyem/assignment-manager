@@ -287,6 +287,18 @@ def call_responder(server, endpoint, payload=''):
     # raise InvalidUsage(req.text, req.status_code)
 
 
+def neuprint_custom_query(payload):
+    ''' Execute a custom NeuPrint query
+        Keyword arguments:
+          payload: Cypher payload
+    '''
+    try:
+        response = call_responder('neuprint', 'custom/custom', {"cypher": payload})
+    except Exception as err:
+        raise err
+    return response
+
+
 def working_duration(start_unix, end_unix):
     ''' Determine working duration (working hours only)
         Keyword arguments:

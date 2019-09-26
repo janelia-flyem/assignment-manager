@@ -26,7 +26,7 @@ import requests
 import assignment_utilities
 from assignment_utilities import (InvalidUsage, call_responder, check_permission,
                                   generate_sql, get_assignment_by_id, get_task_by_id,
-                                  get_tasks_by_assignment_id, random_string,
+                                  get_tasks_by_assignment_id, neuprint_custom_query, random_string,
                                   sql_error, update_property, validate_user, working_duration)
 
 # pylint: disable=W0611
@@ -80,7 +80,6 @@ WRITE = {
     'ASSIGN_TASK': "UPDATE task SET assignment_id=%s,user=%s WHERE assignment_id IS NULL AND id=%s",
     'COMPLETE_TASK': "UPDATE task SET completion_date=FROM_UNIXTIME(%s),disposition=%s,"
                      + "duration=%s,working_duration=%s WHERE id=%s AND completion_date IS NULL",
-    'DELETE_UNASSIGNED': "DELETE FROM task WHERE project_id=%s AND assignment_id IS NULL",
     'INSERT_ASSIGNMENT': "INSERT INTO assignment (name,project_id,user) VALUES(%s,"
                          + "%s,%s)",
     'INSERT_PROJECT': "INSERT INTO project (name,protocol_id,priority) VALUES(%s,"
@@ -114,7 +113,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.7.1'
+__version__ = '0.7.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -394,11 +393,13 @@ def receive_payload(result):
     if not request.get_data():
         return pay
     try:
+        print(request)
         if request.form:
             result['rest']['form'] = request.form
             for i in request.form:
                 pay[i] = request.form[i]
         elif request.json:
+            print("JSON")
             result['rest']['json'] = request.json
             pay = request.json
     except Exception as err:
@@ -760,13 +761,62 @@ def build_protocols_table(user):
 def check_project(project, ipd):
     ''' Check to ensure that a project exists and is active.
         Keyword arguments:
-          task: task instance
+          project: project instance
           ipd: request payload
     '''
     if not project:
         raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
     if not project['active']:
         raise InvalidUsage("Project %s is not active" % project['name'])
+
+
+def process_projectparms(projectins):
+    ''' Return filters and requied/optional parameter HTML
+        Keyword arguments:
+          projectins: project instance
+    '''
+    required = optional = optionaljs = filt = filtjs = ''
+    # ROI is required for NeePrint queries
+    if projectins.task_populate_method == 'query_neuprint':
+        required += '<div class="grid-item">Select ROIs:</div><div class="grid-item">' \
+                    + '<select id="roi" class="selectpicker" multiple data-live-search="true">'
+        payload = "MATCH (n:Meta:%s) RETURN n.superLevelRois" % (app.config['DATASET'].lower())
+        rois = neuprint_custom_query(payload)
+        rlist = rois['data'][0][0]
+        rlist.sort()
+        for roi in rlist:
+            required += '<option>%s</option>' % roi
+        required += '</select></div></div>'
+    # Optional parameters
+    for opt in projectins.optional_properties:
+        if opt == 'roi':
+            continue
+        if opt == 'status':
+            optional += '<div class="grid-item">Select statuses:</div><div class="grid-item">' \
+                        + '<select id="status" class="selectpicker" multiple ' \
+                        + 'data-live-search="true">'
+            payload = "MATCH (n:`%s-Neuron`) RETURN DISTINCT n.status" \
+                      % (app.config['DATASET'].lower())
+            statuses = neuprint_custom_query(payload)
+            rlist = [i[0] for i in statuses['data'] if i[0]]
+            rlist.sort()
+            for stat in rlist:
+                optional += '<option>%s</option>' % stat
+            optional += '</select></div>'
+            optionaljs += "if ($('#status').val()) {array['status'] = " \
+                          + "$('#status').val().join(','); }"
+            continue
+        optional += '<div class="grid-item">%s:</div><div class="grid-item"><input id="%s"></div>' \
+                    % (opt, opt)
+        optionaljs += "if ($('#%s').val()) { array['%s'] = $('#%s').val(); }\n" % (opt, opt, opt)
+    # Filter parameters
+    for fil in projectins.allowable_filters:
+        filt += '<div class="grid-item">%s:</div><div class="grid-item"><input id="%s"></div>' \
+                % (fil, fil)
+        filtjs += "if ($('#%s').val()) { array['%s'] = $('#%s').val(); }\n" % (fil, fil, fil)
+    if filt:
+        filt = '<h4>Search filters:</h4><div class="grid-container" width="500">' + filt + '</div>'
+    return required, optional, optionaljs, filt, filtjs
 
 
 def generate_assignment(ipd, result):
@@ -1538,13 +1588,21 @@ def show_projects():
                                     row['num'], row['disposition'], row['priority'],
                                     row['create_date'], active)
         projects += "</tbody></table>"
-
+        newproject = ''
+        if check_permission(user, 'admin'):
+            newproject = '''
+            <select id="protocol" onchange='new_project(this);'>
+            <option value="all" SELECTED>Select a protocol for a new project...</a>
+            '''
+            for row in protocols:
+                newproject += '<option>%s</option>' % row
+            newproject += '</select><br><br>'
     else:
         projects = "There are no projects"
     navbar = generate_navbar('Projects')
     return render_template('projectlist.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar,
-                           protocols=protocols, projects=projects)
+                           newproject=newproject, protocols=protocols, projects=projects)
 
 
 @app.route('/')
@@ -1702,7 +1760,7 @@ def show_project(pname):
     num_tasks = num_assigned + num_unassigned
     num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
     num_unassignedt = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
-    if num_unassigned and check_permission(user, 'admin'):
+    if num_unassigned and project['active'] and check_permission(user, 'admin'):
         button = '<a class="btn btn-success btn-sm" style="color:#fff" href="' \
                  + '/assignto/' + pname + '" role="button">Create assignment</a>'
         num_unassignedt += ' ' + button
@@ -1819,6 +1877,28 @@ def show_task(task_id):
     return render_template('task.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, task=task_id,
                            tprops=tprops, audit=audit)
+
+
+@app.route('/newproject/<string:protocol>')
+def project_create(protocol):
+    ''' Create a new project
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=" + request.url_root)
+    user, face = get_web_profile()
+    if not check_permission(user, 'admin'):
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Permission error',
+                               message="You don't have permission to create projects")
+    constructor = globals()[protocol.capitalize()]
+    projectins = constructor()
+    required, optional, optionaljs, filt, filtjs = process_projectparms(projectins)
+    navbar = generate_navbar('Projects')
+    return render_template('newproject.html', urlroot=request.url_root, face=face,
+                           dataset=app.config['DATASET'], navbar=navbar, protocol=protocol,
+                           required=required, optionaljs=optionaljs, optional=optional,
+                           filt=filt, filtjs=filtjs)
 
 
 @app.route('/assignto/<string:pname>')

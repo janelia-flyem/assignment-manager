@@ -14,6 +14,10 @@ function show_all() {
   $('#protocol').val('all');
 }
 
+function new_project(sel) {
+  window.location.href = '/newproject/' + sel.value;
+}
+
 function select_protocol(sel) {
   selected = sel.value
   $("#protocol > option").each(function() {
@@ -37,6 +41,7 @@ onload="tableInitialize();"
 {% block content %}
   {{navbar|safe}}
   <h2>Projects</h2>
+  {{newproject|safe}}
   <div>
   <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
   <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
@@ -46,7 +51,7 @@ onload="tableInitialize();"
   <select id="protocol" onchange='select_protocol(this);'>
     <option value="all" SELECTED>All protocols</a>
     {% for pro in protocols %}
-        <option value="{{pro}}">{{protocols[pro]}}</option>"
+        <option value="{{pro}}">{{protocols[pro]}}</option>
     {% endfor %}
   </select>
   </div>

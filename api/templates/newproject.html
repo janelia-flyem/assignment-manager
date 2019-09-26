@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/newproject.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/css/bootstrap-select.css" />
+{% endblock %}
+{% block script %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
+<script>
+function create_project() {
+  if ($('#project_name').val() == "") {
+    alert("Project name is required");
+    return false;
+  }
+  url = "/project/" + $('#protocol').val();
+  token = $.cookie('assignment-manager-token')
+  array = {"project_name": $('#project_name').val()}
+  {{optionaljs|safe}}
+  {{filtjs|safe}}
+  array['roi'] = $('#roi').val().join(',');
+  console.log(array);
+  $.ajax({
+    url: url,
+    headers: {"Authorization": 'Bearer ' + token },
+    type: 'POST',
+    dataType: 'json',
+    data: JSON.stringify(array),
+    contentType:'application/json',
+    success: function(result) {
+      console.log(result);
+      alert(result.rest.tasks_inserted + " task(s) created");
+    },
+    error: function(xhr, ajaxOptions, thrownError, dataType) {
+      if (xhr.status == 401) {
+        alert("You are not authenticated");
+      }
+      else {
+        try {
+          data = JSON.parse(xhr.responseText);
+          alert(xhr.status + ': ' + thrownError + "\n" + data.rest.error);
+        }
+        catch {
+          alert(xhr.status + ': ' + thrownError);
+        }
+      }
+    }
+  });
+}
+$('select').selectpicker();
+</script>
+{% endblock %}
+{% block content %}
+  {{navbar|safe}}
+  <h2>Create {{protocol}} project</h2>
+  <h4>Required parameters:</h4>
+  <div class="grid-container" width="500">
+    <div class="grid-item">Project name:</div>
+    <div class="grid-item"><input id="project_name" size=30></div>
+    {{required|safe}}
+  </div>
+  {{filt|safe}}
+  <h4>Optional parameters:</h4>
+  <div class="grid-container" width="500">
+    {{optional|safe}}
+  </div>
+  <br>
+  <input type="hidden" id="protocol" value="{{protocol}}">
+  <button type="submit" class="btn btn-primary" onclick="create_project(); href='#'">Create project</button>
+{% endblock %}
