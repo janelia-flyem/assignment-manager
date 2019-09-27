@@ -113,7 +113,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.8.0'
+__version__ = '0.8.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -393,7 +393,6 @@ def receive_payload(result):
     if not request.get_data():
         return pay
     try:
-        print(request)
         if request.form:
             result['rest']['form'] = request.form
             for i in request.form:
@@ -778,7 +777,8 @@ def process_projectparms(projectins):
     # ROI is required for NeePrint queries
     if projectins.task_populate_method == 'query_neuprint':
         required += '<div class="grid-item">Select ROIs:</div><div class="grid-item">' \
-                    + '<select id="roi" class="selectpicker" multiple data-live-search="true">'
+                    + '<select id="roi" class="selectpicker" multiple data-live-search="true"' \
+                    + ' onchange="create_project(1);">'
         payload = "MATCH (n:Meta:%s) RETURN n.superLevelRois" % (app.config['DATASET'].lower())
         rois = neuprint_custom_query(payload)
         rlist = rois['data'][0][0]
@@ -793,7 +793,7 @@ def process_projectparms(projectins):
         if opt == 'status':
             optional += '<div class="grid-item">Select statuses:</div><div class="grid-item">' \
                         + '<select id="status" class="selectpicker" multiple ' \
-                        + 'data-live-search="true">'
+                        + 'data-live-search="true" onchange="create_project(1);">'
             payload = "MATCH (n:`%s-Neuron`) RETURN DISTINCT n.status" \
                       % (app.config['DATASET'].lower())
             statuses = neuprint_custom_query(payload)
@@ -810,8 +810,8 @@ def process_projectparms(projectins):
         optionaljs += "if ($('#%s').val()) { array['%s'] = $('#%s').val(); }\n" % (opt, opt, opt)
     # Filter parameters
     for fil in projectins.allowable_filters:
-        filt += '<div class="grid-item">%s:</div><div class="grid-item"><input id="%s"></div>' \
-                % (fil, fil)
+        filt += '<div class="grid-item">%s:</div><div class="grid-item"><input id="%s" ' \
+                 % (fil, fil) + 'onchange="create_project(1);""></div>'
         filtjs += "if ($('#%s').val()) { array['%s'] = $('#%s').val(); }\n" % (fil, fil, fil)
     if filt:
         filt = '<h4>Search filters:</h4><div class="grid-container" width="500">' + filt + '</div>'
@@ -2837,6 +2837,32 @@ def get_projectprop_info():
     '''
     result = initialize_result()
     execute_sql(result, 'SELECT * FROM project_property_vw', 'data')
+    return generate_response(result)
+
+
+@app.route('/neuron_count/<string:protocol>', methods=['OPTIONS', 'POST'])
+def neuron_count(protocol):
+    ''' Given an ROI and filters, return a neuron count
+    '''
+    result = initialize_result()
+    ipd = receive_payload(result)
+    if 'roi' not in ipd or (not ipd['roi']):
+        result['count'] = 0
+        return generate_response(result)
+    constructor = globals()[protocol.capitalize()]
+    projectins = constructor()
+    try:
+        response = projectins.cypher(result, ipd, app.config['NEUPRINT_SOURCE'], True)
+    except AssertionError as err:
+        raise InvalidUsage(err.args[0])
+    except Exception as err:
+        temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+        mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+        raise InvalidUsage(mess, 500)
+    if response['data']:
+        result['count'] = response['data'][0][0]
+    else:
+        result['count'] = 0
     return generate_response(result)
 
 

@@ -17,7 +17,7 @@ class Cleave:
         self.optional_properties = ['roi', 'status', 'note', 'group']
         self.task_insert_props = ['cluster_name', 'post', 'pre', 'status']
 
-    def cypher(self, result, ipd, source):
+    def cypher(self, result, ipd, source, count_only=False):
         '''
         Given a size, and optional ROI and status, generate the Cypher query
         Keyword arguments:
@@ -60,8 +60,9 @@ class Cleave:
             ipd['status'] = ''
         clauses.append(status_clause)
         where_clause = ' AND '.join(clauses)
+        suffix = " RETURN COUNT(n)" if count_only else " RETURN n ORDER BY n.size DESC"
         payload = {"cypher" : "MATCH (n:`" + source + "`) WHERE " + where_clause \
-                   + " RETURN n ORDER BY n.size DESC"}
+                   + suffix}
         result['rest']['cypher'] = payload['cypher']
         print(payload['cypher'])
         try:

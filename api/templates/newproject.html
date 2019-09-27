@@ -7,18 +7,22 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 <script>
-function create_project() {
-  if ($('#project_name').val() == "") {
+function create_project(count=0) {
+  if (!count && $('#project_name').val() == "") {
     alert("Project name is required");
     return false;
   }
-  url = "/project/" + $('#protocol').val();
+  if (count) {
+    url = "/neuron_count/" + $('#protocol').val();
+  }
+  else {
+    url = "/project/" + $('#protocol').val();
+  }
   token = $.cookie('assignment-manager-token')
   array = {"project_name": $('#project_name').val()}
   {{optionaljs|safe}}
   {{filtjs|safe}}
   array['roi'] = $('#roi').val().join(',');
-  console.log(array);
   $('#sb').html(
     `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Creating...`
   );
@@ -32,8 +36,18 @@ function create_project() {
     contentType:'application/json',
     success: function(result) {
       $('#sb').html('Create project');
-      console.log(result);
-      alert(result.rest.tasks_inserted + " task(s) created");
+      if (count) {
+        if (result.count) {
+          $('#neuron_count').html('Neuron count: ' + result.count);
+          $("#neuron_count").show();
+        }
+        else {
+          $("#neuron_count").hide();
+        }
+      }
+      else {
+        alert(result.rest.tasks_inserted + " task(s) created");
+      }
       $('#sb').prop('disabled', false);
     },
     error: function(xhr, ajaxOptions, thrownError, dataType) {
@@ -67,6 +81,7 @@ $('select').selectpicker();
     <div class="grid-item">Project name:</div>
     <div class="grid-item"><input id="project_name" size=30></div>
     {{required|safe}}
+    <div id="neuron_count" style="display:none; color:#9ff;">></div>
   </div>
   {{filt|safe}}
   <h4>Optional parameters:</h4>
