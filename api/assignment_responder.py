@@ -12,7 +12,7 @@ import re
 import sys
 from time import time
 import elasticsearch
-from flask import Flask, g, make_response, redirect, render_template, request, jsonify
+from flask import Flask, g, make_response, redirect, render_template, request, send_file, jsonify
 from flask.json import JSONEncoder
 from flask_cors import CORS
 from flask_swagger import swagger
@@ -113,7 +113,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.7.2'
+__version__ = '0.8.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -962,7 +962,7 @@ def complete_assignment(ipd, result, assignment, incomplete_okay=False):
     publish_kafka('assignment_complete', result, message)
 
 
-def build_assignment_table(user):
+def build_assignment_table(user): # pylint: disable=R0914
     ''' Get a list of all assignments and return as a table.
         Also return a dictionary of proofreaders.
     '''
@@ -978,15 +978,17 @@ def build_assignment_table(user):
     proofreaders = dict()
     protocols = dict()
     if rows:
-        assignments = """
+        header = ['Proofreader', 'Project', 'Protocol', 'Assignment', 'Started', 'Completed',
+                  'Task disposition', 'Task count']
+        assignments = '''
         <table id="assignments" class="tablesorter standard">
-        <thead>
-        <tr><th>Proofreader</th><th>Project</th><th>Protocol</th><th>Assignment</th><th>Started</th><th>Completed</th><th>Task disposition</th><th>Task count</th></tr>
-        </thead>
-        <tbody>
-        """
+        <tr><th>
+        '''
+        assignments += '</th><th>'.join(header) + '</th></tr></thead><tbody>'
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*6 \
                    + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+        fileoutput = ''
+        ftemplate = "\t".join(["%s"]*8) + "\n"
         for row in rows:
             rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
             if not row['task_disposition']:
@@ -1002,7 +1004,14 @@ def build_assignment_table(user):
             assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
                                        assn, row['start_date'], row['completion_date'],
                                        row['task_disposition'], row['tasks'])
+            fileoutput += ftemplate % (row['proofreader'], row['project'], row['protocol'],
+                                       row['assignment'], row['start_date'], row['completion_date'],
+                                       row['task_disposition'], row['tasks'])
         assignments += "</tbody></table>"
+        downloadable = create_downloadable('assignments', header, ftemplate, fileoutput)
+        assignments = '<h2>Projects with unassigned tasks</h2>' \
+                      + '<a class="btn btn-outline-info" href="/download/%s" ' \
+                      % (downloadable) + 'role="button">Download table</a>' + assignments
     else:
         assignments = "There are no open assignments"
     return proofreaders, assignments, protocols
@@ -1283,6 +1292,8 @@ def generate_navbar(active):
     ''' Generate the web navigation bar
         Keyword arguments:
           active: name of active nav
+        Returns:
+          Navigation bar
     '''
     nav = '''
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
@@ -1309,6 +1320,24 @@ def generate_navbar(active):
             nav += '</li>'
     nav += '</ul></div></nav>'
     return nav
+
+
+def create_downloadable(name, header, template, content):
+    ''' Generate a dowenloadabe content file
+        Keyword arguments:
+          name: base file name
+          header: table header
+          template: header row template
+          content: table content
+        Returns:
+          File name
+    '''
+    fname = '%s_%s_%s.tsv' % (name, random_string(), datetime.today().strftime('%Y%m%d%H%M%S'))
+    text_file = open("/tmp/%s" % (fname), "w")
+    text_file.write(template % tuple(header))
+    text_file.write(content)
+    text_file.close()
+    return fname
 
 
 def publish_kafka(topic, result, message):
@@ -1545,8 +1574,19 @@ def logout():
     return response
 
 
+@app.route('/download/<string:fname>')
+def download(fname):
+    ''' Downloadable content
+    '''
+    try:
+        return send_file('/tmp/' + fname, attachment_filename=fname)
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Download error', message=err)
+
+
 @app.route('/projectlist')
-def show_projects():
+def show_projects(): # pylint: disable=R0914
     ''' Projects
     '''
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
@@ -1561,15 +1601,18 @@ def show_projects():
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     if rows:
+        header = ['Protocol', 'Group', 'Project', 'Tasks', 'Disposition', 'Priority',
+                  'Created', 'Active']
         projects = '''
         <table id="projects" class="tablesorter standard">
         <thead>
-        <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Disposition</th><th>Priority</th><th>Created</th><th>Active</th></tr>
-        </thead>
-        <tbody>
+        <tr><th>
         '''
+        projects += '</th><th>'.join(header) + '</th></tr></thead><tbody>'
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
                    + ''.join('<td style="text-align: center">%s</td>')*5 + "</tr>"
+        fileoutput = ''
+        ftemplate = "\t".join(["%s"]*8) + "\n"
         protocols = dict()
         for row in rows:
             if 'admin' not in permissions and row['protocol'] not in permissions:
@@ -1586,6 +1629,9 @@ def show_projects():
             projects += template % (rclass, row['protocol'], row['project_group'], proj,
                                     row['num'], row['disposition'], row['priority'],
                                     row['create_date'], active)
+            fileoutput += ftemplate % (row['protocol'], row['project_group'], row['project'],
+                                       row['num'], row['disposition'], row['priority'],
+                                       row['create_date'], row['active'])
         projects += "</tbody></table>"
         newproject = ''
         if check_permission(user, 'admin'):
@@ -1596,6 +1642,9 @@ def show_projects():
             for row in protocols:
                 newproject += '<option>%s</option>' % row
             newproject += '</select><br><br>'
+        downloadable = create_downloadable('projects', header, ftemplate, fileoutput)
+        projects = '<a class="btn btn-outline-info" href="/download/%s" ' \
+                   % (downloadable) + 'role="button">Download table</a>' + projects
     else:
         projects = "There are no projects"
     navbar = generate_navbar('Projects')
@@ -1606,7 +1655,7 @@ def show_projects():
 
 @app.route('/')
 @app.route('/assignmentlist')
-def show_assignments():
+def show_assignments(): # pylint: disable=R0914
     ''' Default route
     '''
     if not request.cookies.get(app.config['TOKEN']):
@@ -1630,16 +1679,16 @@ def show_assignments():
             return render_template('error.html', urlroot=request.url_root,
                                    title='SQL error', message=sql_error(err))
         if rows:
+            header = ['Protocol', 'Group', 'Project', 'Tasks', 'Priority', 'Active', 'Assignment']
             unassigned = '''
-            <h2>Projects with unassigned tasks</h2>
             <table id="unassigned" class="tablesorter standard">
-            <thead>
-            <tr><th>Protocol</th><th>Group</th><th>Project</th><th>Tasks</th><th>Priority</th><th>Active</th><th>Assignment</th></tr>
-            </thead>
-            <tbody>
+            <tr><th>
             '''
+            unassigned += '</th><th>'.join(header) + '</th></tr></thead><tbody>'
             template = "<tr>" + ''.join("<td>%s</td>")*3 \
                        + ''.join('<td style="text-align: center">%s</td>')*4 + "</tr>"
+            fileoutput = ''
+            ftemplate = "\t".join(["%s"]*7) + "\n"
             for row in rows:
                 active = "<span style='color:%s'>%s</span>" \
                          % (('lime', 'YES') if row['active'] else ('red', 'NO'))
@@ -1650,7 +1699,13 @@ def show_assignments():
                                           ('<a href="/project/%s">%s</a>' % (row['project'], \
                                            row['project'])),
                                           row['num'], row['priority'], active, button)
+                fileoutput += ftemplate % (row['protocol'], row['project_group'], row['project'],
+                                           row['num'], row['priority'], row['active'], '-')
             unassigned += "</tbody></table>"
+            downloadable = create_downloadable('unassigned', header, ftemplate, fileoutput)
+            unassigned = '<h2>Projects with unassigned tasks</h2>' \
+                         + '<a class="btn btn-outline-info" href="/download/%s" ' \
+                         % (downloadable) + 'role="button">Download table</a>' + unassigned
         else:
             unassigned = "There are no projects with unassigned tasks"
     else:
