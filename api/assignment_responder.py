@@ -113,7 +113,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.8.1'
+__version__ = '0.8.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -774,7 +774,7 @@ def process_projectparms(projectins):
           projectins: project instance
     '''
     required = optional = optionaljs = filt = filtjs = ''
-    # ROI is required for NeePrint queries
+    # ROI is required for NeuPrint queries
     if projectins.task_populate_method == 'query_neuprint':
         required += '<div class="grid-item">Select ROIs:</div><div class="grid-item">' \
                     + '<select id="roi" class="selectpicker" multiple data-live-search="true"' \
@@ -785,7 +785,12 @@ def process_projectparms(projectins):
         rlist.sort()
         for roi in rlist:
             required += '<option>%s</option>' % roi
-        required += '</select></div></div>'
+        required += '</select></div>'
+    required += '''
+    <div class="grid-item">Priority</div>
+    <div class="grid-item"><input id="priority" value=5 size=2> (positive integer; 1=highest)
+    </div>
+    '''
     # Optional parameters
     for opt in projectins.optional_properties:
         if opt == 'roi':
