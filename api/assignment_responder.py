@@ -113,7 +113,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.8.2'
+__version__ = '0.8.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -816,7 +816,7 @@ def process_projectparms(projectins):
     # Filter parameters
     for fil in projectins.allowable_filters:
         filt += '<div class="grid-item">%s:</div><div class="grid-item"><input id="%s" ' \
-                 % (fil, fil) + 'onchange="create_project(1);""></div>'
+                % (fil, fil) + 'onchange="create_project(1);""></div>'
         filtjs += "if ($('#%s').val()) { array['%s'] = $('#%s').val(); }\n" % (fil, fil, fil)
     if filt:
         filt = '<h4>Search filters:</h4><div class="grid-container" width="500">' + filt + '</div>'
@@ -1014,8 +1014,7 @@ def build_assignment_table(user): # pylint: disable=R0914
                                        row['task_disposition'], row['tasks'])
         assignments += "</tbody></table>"
         downloadable = create_downloadable('assignments', header, ftemplate, fileoutput)
-        assignments = '<h2>Projects with unassigned tasks</h2>' \
-                      + '<a class="btn btn-outline-info" href="/download/%s" ' \
+        assignments = '<a class="btn btn-outline-info" href="/download/%s" ' \
                       % (downloadable) + 'role="button">Download table</a>' + assignments
     else:
         assignments = "There are no open assignments"
@@ -1605,6 +1604,7 @@ def show_projects(): # pylint: disable=R0914
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
+    newproject = protocols = ''
     if rows:
         header = ['Protocol', 'Group', 'Project', 'Tasks', 'Disposition', 'Priority',
                   'Created', 'Active']
@@ -1638,20 +1638,22 @@ def show_projects(): # pylint: disable=R0914
                                        row['num'], row['disposition'], row['priority'],
                                        row['create_date'], row['active'])
         projects += "</tbody></table>"
-        newproject = ''
-        if check_permission(user, 'admin'):
-            newproject = '''
-            <select id="protocol" onchange='new_project(this);'>
-            <option value="all" SELECTED>Select a protocol for a new project...</a>
-            '''
-            for row in protocols:
-                newproject += '<option>%s</option>' % row
-            newproject += '</select><br><br>'
         downloadable = create_downloadable('projects', header, ftemplate, fileoutput)
         projects = '<a class="btn btn-outline-info" href="/download/%s" ' \
                    % (downloadable) + 'role="button">Download table</a>' + projects
     else:
         projects = "There are no projects"
+    if check_permission(user, 'admin'):
+        result = initialize_result()
+        execute_sql(result, "SELECT cv_term FROM cv_term_vw WHERE cv='protocol' ORDER BY 1", 'temp')
+        newproject = '''
+        <select id="protocol" onchange='new_project(this);'>
+        <option value="all" SELECTED>Select a protocol for a new project...</a>
+        '''
+        for row in result['temp']:
+            if bool(row['cv_term'] in sys.modules):
+                newproject += '<option>%s</option>' % row['cv_term']
+        newproject += '</select><br><br>'
     navbar = generate_navbar('Projects')
     return render_template('projectlist.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar,
@@ -1741,6 +1743,7 @@ def show_tasks():
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
+    protocols = dict()
     if rows:
         tasks = '''
         <table id="projects" class="tablesorter standard">
@@ -1751,7 +1754,6 @@ def show_tasks():
         '''
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
                    + ''.join('<td style="text-align: center">%s</td>')*5 + "</tr>"
-        protocols = dict()
         for row in rows:
             rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
             if not row['start_date']:
@@ -3025,6 +3027,47 @@ def get_projects_eligible():
     if not result['projects']:
         raise InvalidUsage('No eligible projects', 404)
     result['rest']['row_count'] = len(result['projects'])
+    return generate_response(result)
+
+
+@app.route('/project/<string:project_name>', methods=['DELETE', 'OPTIONS'])
+def delete_project(project_name):
+    '''
+    Delete a project
+    '''
+    result = initialize_result()
+    if not check_permission(result['rest']['user'], 'super'):
+        raise InvalidUsage("You don't have permission to delete projects")
+    project = get_project_by_name_or_id(project_name)
+    if not project:
+        raise InvalidUsage("Project %s doesn't exist" % (project_name))
+    bind = (project['id'])
+    try:
+        g.c.execute('DELETE FROM task_audit WHERE project_id=%s', bind)
+        result['rest']['row_count'] += g.c.rowcount
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    try:
+        g.c.execute('DELETE FROM task WHERE project_id=%s', bind)
+        result['rest']['row_count'] += g.c.rowcount
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    try:
+        g.c.execute('DELETE FROM assignment WHERE project_id=%s', bind)
+        result['rest']['row_count'] += g.c.rowcount
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    try:
+        g.c.execute('DELETE FROM project_property WHERE project_id=%s', bind)
+        result['rest']['row_count'] += g.c.rowcount
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    try:
+        g.c.execute('DELETE FROM project WHERE id=%s', bind)
+        result['rest']['row_count'] += g.c.rowcount
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    g.db.commit()
     return generate_response(result)
 
 

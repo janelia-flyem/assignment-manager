@@ -61,6 +61,7 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'coordinates','Coordinates','Point coordinates');
 
 INSERT INTO user (name,first,last,janelia_id,email,organization) VALUES ('robsvi@gmail.com','Rob','Svirskas','svirskasr','svirskasr@hhmi.org','Scientific Computing');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'super');
 INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'admin');
 INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'cleave');
 INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'orphan_link');
@@ -68,7 +69,13 @@ INSERT INTO user (name,first,last,janelia_id,email,organization) VALUES ('olbris
 INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='olbrisd'),'admin');
 INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='olbrisd'),'orphan_link');
 INSERT INTO user (name,first,last,janelia_id,email,organization) VALUES ('erika.neace@gmail.com','Erika','Neace','neacee','neacee@hhmi.org','FlyEM Proofreaders');
-INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'admin');
-INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'cleave');
-INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'orphan_link');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='neacee'),'admin');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='neacee'),'cleave');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='neacee'),'orphan_link');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='neacee'),'todo');
+INSERT INTO user (name,first,last,janelia_id,email,organization) VALUES ('patrivlin@gmail.com','Pat','Rivlin','rivlinp','rivlinp@hhmi.org','FlyEM Project and Software');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='rivlinp'),'admin');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='rivlinp'),'cleave');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='rivlinp'),'orphan_link');
+INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='rivlinp'),'todo');
 SET FOREIGN_KEY_CHECKS=1;
