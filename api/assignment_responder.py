@@ -113,7 +113,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.8.4'
+__version__ = '0.8.5'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -807,9 +807,18 @@ def process_projectparms(projectins):
             required += '<option>%s</option>' % roi
         required += '</select></div>'
     required += '''
-    <div class="grid-item">Priority</div>
-    <div class="grid-item"><input id="priority" value=5 size=2> (positive integer; 1=highest)
+    <div class="grid-item">Priority:</div>
+    <div class="grid-item"><input id="slider" width="300" value="10"/><span style="font-size:14pt; color:#fff;" id="priority"></span> (1-50; 1=highest)</div>
     </div>
+    <script>
+      $('#slider').slider({
+        uiLibrary: 'bootstrap4',
+        min: 1, max: 50, value: 10,
+        slide: function (e, value) {
+          document.getElementById('priority').innerText = value;
+        }
+      });
+    </script>
     '''
     # Optional parameters
     for opt in projectins.optional_properties:

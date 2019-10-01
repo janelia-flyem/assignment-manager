@@ -2,10 +2,12 @@
 {% block css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/newproject.css') }}">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/css/bootstrap-select.css" />
+<link href="https://unpkg.com/gijgo@1.9.13/css/gijgo.min.css" rel="stylesheet" type="text/css" />
 {% endblock %}
 {% block script %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
+<script src="https://unpkg.com/gijgo@1.9.13/js/gijgo.min.js" type="text/javascript"></script>
 <script>
 function create_project(count=0) {
   if (!count && $('#project_name').val() == "") {
@@ -20,7 +22,7 @@ function create_project(count=0) {
   }
   token = $.cookie('assignment-manager-token')
   array = {"project_name": $('#project_name').val(),
-           "priority": $('#priority').val()}
+           "priority": $('#priority').text()}
   {{optionaljs|safe}}
   {{filtjs|safe}}
   array['roi'] = $('#roi').val().join(',');
