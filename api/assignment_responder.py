@@ -113,7 +113,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.8.5'
+__version__ = '0.8.6'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1733,7 +1733,7 @@ def show_assignments(start='', stop=''): # pylint: disable=R0914
     proofreaders, assignments, protocols = build_assignment_table(user, start, stop)
     if check_permission(user, 'admin'):
         try:
-            g.c.execute(READ['PSUMMARY'])
+            g.c.execute(READ['UPSUMMARY'])
             rows = g.c.fetchall()
         except Exception as err:
             return render_template('error.html', urlroot=request.url_root,
@@ -1814,9 +1814,10 @@ def show_tasks():
             name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
             rclass += ' ' + name
             protocols[name] = row['protocol']
+            idlink = '<a href="/task/%s">%s</a>' % (row['id'], row['id'])
             proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             assign = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
-            tasks += template % (rclass, row['id'], proj, assign, row['priority'],
+            tasks += template % (rclass, idlink, proj, assign, row['priority'],
                                  row['start_date'], row['completion_date'], row['disposition'],
                                  row['duration'])
         tasks += "</tbody></table>"
