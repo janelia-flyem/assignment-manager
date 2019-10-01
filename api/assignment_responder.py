@@ -1063,7 +1063,7 @@ def build_assignment_table(user, start, stop): # pylint: disable=R0914
                                        row['task_disposition'], row['tasks'])
         assignments += "</tbody></table>"
         downloadable = create_downloadable('assignments', header, ftemplate, fileoutput)
-        assignments = '<a class="btn btn-outline-info" href="/download/%s" ' \
+        assignments = '<a class="btn btn-outline-info btn-sm" href="/download/%s" ' \
                       % (downloadable) + 'role="button">Download table</a>' + assignments
     else:
         assignments = "There are no open assignments"
@@ -1690,7 +1690,7 @@ def show_projects(start='', stop=''): # pylint: disable=R0914
                                        row['create_date'], row['active'])
         projects += "</tbody></table>"
         downloadable = create_downloadable('projects', header, ftemplate, fileoutput)
-        projects = '<a class="btn btn-outline-info" href="/download/%s" ' \
+        projects = '<a class="btn btn-outline-info btn-sm" href="/download/%s" ' \
                    % (downloadable) + 'role="button">Download table</a>' + projects
     else:
         projects = "There are no projects"
@@ -1764,7 +1764,7 @@ def show_assignments(start='', stop=''): # pylint: disable=R0914
             unassigned += "</tbody></table>"
             downloadable = create_downloadable('unassigned', header, ftemplate, fileoutput)
             unassigned = '<br><h2>Projects with unassigned tasks</h2>' \
-                         + '<a class="btn btn-outline-info" href="/download/%s" ' \
+                         + '<a class="btn btn-outline-info btn-sm" href="/download/%s" ' \
                          % (downloadable) + 'role="button">Download table</a>' + unassigned
         else:
             unassigned = "There are no projects with unassigned tasks"
