@@ -113,7 +113,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.8.3'
+__version__ = '0.8.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -687,6 +687,26 @@ def get_unassigned_project_tasks(ipd, project_id, num_tasks):
     return tasks
 
 
+def project_summary_date(start, stop):
+    ''' Build a project summary date query
+        Keyword arguments:
+          start: start date
+          stop: stop date
+        Returns:
+          SQL query
+    '''
+    sql = READ['PSUMMARY']
+    if (start or stop):
+        clause = []
+        if start:
+            clause.append(" DATE(p.create_date) >= '%s'" % start)
+        if stop:
+            clause.append(" DATE(p.create_date) <= '%s'" % stop)
+        where = ' AND '.join(clause)
+        sql = sql.replace('GROUP BY', 'WHERE ' + where + ' GROUP BY')
+    return sql
+
+
 def get_incomplete_assignment_tasks(assignment_id):
     ''' Get a list of completed tasks for an assignment
         Keyword arguments:
@@ -866,7 +886,7 @@ def generate_assignment(ipd, result):
             result['rest']['row_count'] += g.c.rowcount
             updated += 1
             publish_cdc(result, {"table": "assignment", "operation": "update"})
-            bind = (str(task['id']), project['id'], result['rest']['inserted_id'], projectins.unit,
+            bind = (task['id'], project['id'], result['rest']['inserted_id'], projectins.unit,
                     task['key_text'], 'Assigned', assignment_user)
             g.c.execute(WRITE['TASK_AUDIT'], bind)
             if updated >= num_tasks:
@@ -967,15 +987,35 @@ def complete_assignment(ipd, result, assignment, incomplete_okay=False):
     publish_kafka('assignment_complete', result, message)
 
 
-def build_assignment_table(user): # pylint: disable=R0914
+def build_assignment_table(user, start, stop): # pylint: disable=R0914
     ''' Get a list of all assignments and return as a table.
-        Also return a dictionary of proofreaders.
+        Also return a dictionary of proofreaders and protocols.
+        Keyword arguments:
+          user: proofreader
+          start: start date
+          stop: stop date
+        Returns:
+          Dictionary of proofreaders
+          Assignments HTML
+          Dictionary of rotocols
     '''
-    stmt = "SELECT * FROM project_stats_vw"
+    sql = "SELECT * FROM project_stats_vw"
+    if (start or stop):
+        clause = []
+        if start:
+            clause.append(" DATE(create_date) >= '%s'" % start)
+        if stop:
+            clause.append(" DATE(create_date) <= '%s'" % stop)
+        where = ' AND '.join(clause)
+        sql += ' WHERE ' + where
     if not check_permission(user, 'admin'):
-        stmt += " WHERE user='" + user + "'"
+        if (start or stop):
+            sql += ' AND '
+        else:
+            sql += ' WHERE '
+        sql += "user='" + user + "'"
     try:
-        g.c.execute(stmt)
+        g.c.execute(sql)
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
@@ -1590,7 +1630,9 @@ def download(fname):
 
 
 @app.route('/projectlist')
-def show_projects(): # pylint: disable=R0914
+@app.route('/projectlist/<start>')
+@app.route('/projectlist/<start>/<stop>')
+def show_projects(start='', stop=''): # pylint: disable=R0914
     ''' Projects
     '''
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
@@ -1599,7 +1641,7 @@ def show_projects(): # pylint: disable=R0914
     user, face = get_web_profile()
     permissions = check_permission(user)
     try:
-        g.c.execute(READ['PSUMMARY'])
+        g.c.execute(project_summary_date(start, stop))
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
@@ -1653,16 +1695,18 @@ def show_projects(): # pylint: disable=R0914
         for row in result['temp']:
             if bool(row['cv_term'] in sys.modules):
                 newproject += '<option>%s</option>' % row['cv_term']
-        newproject += '</select><br><br>'
+        newproject += '</select><hr style="border: 1px solid gray">'
     navbar = generate_navbar('Projects')
     return render_template('projectlist.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar,
+                           dataset=app.config['DATASET'], navbar=navbar, start=start, stop=stop,
                            newproject=newproject, protocols=protocols, projects=projects)
 
 
 @app.route('/')
 @app.route('/assignmentlist')
-def show_assignments(): # pylint: disable=R0914
+@app.route('/assignmentlist/<start>')
+@app.route('/assignmentlist/<start>/<stop>')
+def show_assignments(start='', stop=''): # pylint: disable=R0914
     ''' Default route
     '''
     if not request.cookies.get(app.config['TOKEN']):
@@ -1677,10 +1721,10 @@ def show_assignments(): # pylint: disable=R0914
     face = ''
     if request.cookies.get(app.config['TOKEN']):
         user, face = get_web_profile()
-    proofreaders, assignments, protocols = build_assignment_table(user)
+    proofreaders, assignments, protocols = build_assignment_table(user, start, stop)
     if check_permission(user, 'admin'):
         try:
-            g.c.execute(READ['UPSUMMARY'])
+            g.c.execute(READ['PSUMMARY'])
             rows = g.c.fetchall()
         except Exception as err:
             return render_template('error.html', urlroot=request.url_root,
@@ -1710,7 +1754,7 @@ def show_assignments(): # pylint: disable=R0914
                                            row['num'], row['priority'], row['active'], '-')
             unassigned += "</tbody></table>"
             downloadable = create_downloadable('unassigned', header, ftemplate, fileoutput)
-            unassigned = '<h2>Projects with unassigned tasks</h2>' \
+            unassigned = '<br><h2>Projects with unassigned tasks</h2>' \
                          + '<a class="btn btn-outline-info" href="/download/%s" ' \
                          % (downloadable) + 'role="button">Download table</a>' + unassigned
         else:
@@ -1722,9 +1766,9 @@ def show_assignments(): # pylint: disable=R0914
     navbar = generate_navbar('Assignments')
     response = make_response(render_template('assignmentlist.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
-                                             navbar=navbar, assignments=assignments,
-                                             protocols=protocols, proofreaders=proofreaders,
-                                             unassigned=unassigned))
+                                             navbar=navbar, start=start, stop=stop,
+                                             assignments=assignments, protocols=protocols,
+                                             proofreaders=proofreaders, unassigned=unassigned))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
 
@@ -3618,13 +3662,13 @@ def delete_assignment(assignment_id):
         if task['start_date']:
             raise InvalidUsage("Assignment %s has one or more started tasks" % (assignment_id))
     try:
-        stmt = "UPDATE task SET assignment_id=NULL WHERE assignment_id = %s"
+        stmt = "UPDATE task SET assignment_id=NULL WHERE assignment_id=%s"
         bind = (assignment_id)
         g.c.execute(stmt, bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
         for task in tasks:
-            bind = (g.c.lastrowid, task['project_id'], assignment_id, task['key_type'],
+            bind = (task['id'], task['project_id'], assignment_id, task['key_type'],
                     task['key_text'], 'Unassigned', task['user'])
             g.c.execute(WRITE['TASK_AUDIT'], bind)
         g.c.execute("DELETE from assignment WHERE id=%s", (assignment_id))

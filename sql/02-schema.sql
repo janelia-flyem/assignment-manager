@@ -224,7 +224,7 @@ CREATE TABLE `task_audit` (
   `create_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `task_audit_type_key_uk_ind` (`key_type_id`,`key_text`) USING BTREE,
-  CONSTRAINT `task_audit_task_id_fk` FOREIGN KEY (`project_id`) REFERENCES `task` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `task_audit_task_id_fk` FOREIGN KEY (`task_id`) REFERENCES `task` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `task_audit_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `task_audit_key_type_id_fk` FOREIGN KEY (`key_type_id`) REFERENCES `cv_term` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB AUTO_INCREMENT=1001 DEFAULT CHARSET=latin1;

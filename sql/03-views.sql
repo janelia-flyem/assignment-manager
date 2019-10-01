@@ -342,6 +342,7 @@ SELECT
     CONCAT(u.first,' ',u.last) AS proofreader,
     a.project,
     a.name AS assignment,
+    a.create_date AS create_date,
     a.start_date AS start_date,
     a.completion_date AS completion_date,
     a.protocol,
