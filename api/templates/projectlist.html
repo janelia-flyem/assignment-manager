@@ -12,7 +12,6 @@ function show_all() {
   $(".notstarted").show();
   $('#hc').removeAttr("disabled");
   $('#ho').removeAttr("disabled");
-  $('#hn').removeAttr("disabled");
   $('#protocol').val('all');
 }
 
@@ -32,7 +31,6 @@ function select_protocol(sel) {
   });
   $('#hc').removeAttr("disabled");
   $('#ho').removeAttr("disabled");
-  $('#hn').removeAttr("disabled");
 }
 
 function change_date()
@@ -73,7 +71,6 @@ onload="tableInitialize();"
   <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
   <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
   <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button>
-  <button id="hn" type="button" class="btn btn-primary btn-sm" onclick='$(".notstarted").hide(); $("#hn").attr("disabled", true);'>Hide not started</button>
   Select protocol:
   <select id="protocol" onchange='select_protocol(this);'>
     <option value="all" SELECTED>All protocols</a>

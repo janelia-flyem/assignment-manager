@@ -26,8 +26,9 @@ import requests
 import assignment_utilities
 from assignment_utilities import (InvalidUsage, call_responder, check_permission,
                                   generate_sql, get_assignment_by_id, get_task_by_id,
-                                  get_tasks_by_assignment_id, neuprint_custom_query, random_string,
-                                  sql_error, update_property, validate_user, working_duration)
+                                  get_tasks_by_assignment_id, get_workday, neuprint_custom_query,
+                                  random_string, sql_error, update_property, validate_user,
+                                  working_duration)
 
 # pylint: disable=W0611
 from orphan_link import Orphan_link
@@ -113,7 +114,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.8.6'
+__version__ = '0.8.7'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -548,7 +549,7 @@ def generate_project(protocol, result):
         print("Project %s (ID %s) already exists" % (project['name'], project['id']))
     else:
         if 'priority' not in ipd:
-            ipd['priority'] = 5
+            ipd['priority'] = 10
         insert_project(ipd, result)
     # Add project properties from input parameters
     for parm in projectins.optional_properties:
@@ -727,15 +728,21 @@ def select_user(project, ipd, result):
           project: project instance
           ipd: request payload
           result: result dictionary
+        Returns:
+          User name
     '''
     if 'user' in ipd:
         # On behalf of
         if not check_permission(result['rest']['user'], 'admin'):
-            raise InvalidUsage("%s doesn't have permission to assign on behalf of %s"
-                               % (result['rest']['user'], ipd['user']))
-        assignment_user = validate_user(ipd['user'])
+            raise InvalidUsage("You doesn't have permission to assign jobs")
+        assignment_user, janelia_id = validate_user(ipd['user'])
+        workday = get_workday(janelia_id)
+        need_permission = workday['organization']
+        if not check_permission(result['rest']['user'], need_permission):
+            raise InvalidUsage("You doesn't have permission to assign jobs to %s"
+                               % (need_permission))
     else:
-        assignment_user = result['rest']['user']
+        assignment_user, janelia_id = validate_user(result['rest']['user'])
     if not check_permission(assignment_user, project['protocol']):
         raise InvalidUsage("%s doesn't have permission to process %s assignments"
                            % (assignment_user, project['protocol']))
@@ -761,16 +768,31 @@ def build_protocols_table(user):
         else:
             display = '<span style="color:#666;text-decoration:line-through;">%s</span>' % display
             check = '<input type="checkbox" disabled>'
+        if row['cv_term'] in permissions:
+            permissions.remove(row['cv_term'])
         parray.append(template % (display, check))
     ptable = '<table><thead><tr style="color:#069"><th>Protocol</th>' \
              + '<th>Enabled</th></tr></thead><tbody>' \
              + ''.join(parray) + '</tbody></table>'
+    # Administrative
     parray = []
     val = 'checked="checked"' if 'admin' in permissions else ''
     check = '<input type="checkbox" %s id="%s" onchange="changebox(this);">' \
             % (val, 'admin')
     parray.append(template % ('Administrative', check))
     ptable += '<table><thead><tr style="color:#069"><th>Permission</th>' \
+              + '<th>Enabled</th></tr></thead><tbody>' \
+              + ''.join(parray) + '</tbody></table>'
+    for perm in ['admin', 'super']:
+        if perm in permissions:
+            permissions.remove(perm)
+    if permissions:
+        parray = []
+        for perm in permissions:
+            val = 'checked="checked"'
+            check = '<input type="checkbox" checked="checked" disabled>'
+            parray.append(template % (perm, check))
+        ptable += '<table><thead><tr style="color:#069"><th>Assignments</th>' \
               + '<th>Enabled</th></tr></thead><tbody>' \
               + ''.join(parray) + '</tbody></table>'
     return ptable
@@ -951,6 +973,23 @@ def start_assignment(ipd, result):
     publish_kafka('assignment_start', result, message)
 
 
+def update_project_disposition(project_name, disposition='Complete'):
+    ''' If all tasks in a project have been completed, mark the project as complete
+        Keyword arguments:
+          project_name: project name
+          disposition: disposition [Complete]
+    '''
+    g.c.execute("SELECT COUNT(1) AS c FROM task_vw WHERE project=%s AND completion_date IS NULL",
+                project_name)
+    row = g.c.fetchone()
+    if not row['c']:
+        try:
+            g.c.execute("UPDATE project SET disposition=%s WHERE "
+                        + "name=%s", (disposition, project_name,))
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+
+
 def complete_assignment(ipd, result, assignment, incomplete_okay=False):
     ''' Start a task.
         Keyword arguments:
@@ -988,6 +1027,7 @@ def complete_assignment(ipd, result, assignment, incomplete_okay=False):
         if parm in ipd:
             update_property(assignment['id'], 'assignment', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
+    update_project_disposition(assignment['project'])
     g.db.commit()
     message = {"mad_id": assignment['id'], "user": assignment['user'],
                "start_time": start_time, "end_time": end_time,
@@ -1675,7 +1715,7 @@ def show_projects(start='', stop=''): # pylint: disable=R0914
                 continue
             rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
             if not row['disposition']:
-                rclass = 'notstarted'
+                rclass = 'open'
             name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
             rclass += ' ' + name
             protocols[name] = row['protocol']
@@ -1910,7 +1950,7 @@ def show_assignment(aname):
         return render_template('error.html', urlroot=request.url_root,
                                message='Assignment %s was not found' % aname)
     aprops = []
-    for prop in ['project', 'protocol', 'user2', 'disposition', 'start_date',
+    for prop in ['project', 'protocol', 'user2', 'disposition', 'create_date', 'start_date',
                  'completion_date', 'duration', 'working_duration', 'note']:
         if assignment[prop]:
             show = prop.replace('_', ' ')
@@ -3771,7 +3811,7 @@ def new_tasks_for_project(protocol, project_name):
         raise InvalidUsage("Payload must be a JSON dictionary")
     if not project:
         if 'priority' not in ipd:
-            ipd['priority'] = 5
+            ipd['priority'] = 10
         insert_project(ipd, result)
         project = dict()
         project['id'] = result['rest']['inserted_id']

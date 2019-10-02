@@ -49,7 +49,11 @@ function create_project(count=0) {
         }
       }
       else {
-        alert(result.rest.tasks_inserted + " task(s) created");
+        num_tasks = result.rest.tasks_inserted;
+        if (!num_tasks) {
+          num_tasks = 'No';
+        }
+        alert(num_tasks + " task(s) created");
       }
       $('#sb').prop('disabled', false);
     },

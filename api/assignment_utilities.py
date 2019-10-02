@@ -179,6 +179,20 @@ def get_key_type_id(key_type):
     return KEY_TYPE_IDS[key_type]
 
 
+def get_workday(janelia_id):
+    ''' Given a Janelia ID, return the Workday record
+        Keyword arguments:
+          janelia_id: Janelia ID
+        Returns:
+          Workday record
+    '''
+    data = call_responder('config', 'config/workday/' + janelia_id)
+    if not data:
+        raise InvalidUsage('User %s not found in Workday' % (janelia_id))
+    work = data['config']
+    return work
+
+
 def sql_error(err):
     ''' Given a MySQL error, return the error message
         Keyword arguments:
@@ -207,7 +221,7 @@ def validate_user(user):
         raise InvalidUsage(sql_error(err), 500)
     if not usr:
         raise InvalidUsage("User %s does not exist" % (user), 400)
-    return usr['name']
+    return usr['name'], usr['janelia_id']
 
 
 def check_permission(user, permission=None):
