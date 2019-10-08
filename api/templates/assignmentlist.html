@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/css/bootstrap-select.css" />
 <link href="https://unpkg.com/gijgo@1.9.13/css/gijgo.min.css" rel="stylesheet" type="text/css" />
 {% endblock %}
 {% block script %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 <script src="https://unpkg.com/gijgo@1.9.13/js/gijgo.min.js" type="text/javascript"></script>
 <script>
 function show_all() {
@@ -56,6 +58,7 @@ function change_date()
   }
   window.location.href = url;
 }
+$('select').selectpicker();
 </script>
 {% endblock %}
 {% block onload %}
@@ -80,14 +83,14 @@ onload="tableInitialize();"
   <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
   <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button>
   Select protocol:
-  <select id="protocol" onchange='select_protocol(this);'>
+  <select id="protocol" class="selectpicker" data-live-search="true" onchange='select_protocol(this);'>
     <option value="all" SELECTED>All protocols</a>
     {% for pro in protocols %}
         <option value="{{pro}}">{{protocols[pro]}}</option>"
     {% endfor %}
   </select>
   Select proofreader:
-  <select id="proofreader" onchange='select_proofreader(this);'>
+  <select id="proofreader" class="selectpicker" data-live-search="true" onchange='select_proofreader(this);'>
     <option value="all" SELECTED>All proofreaders</a>
     {% for prf in proofreaders %}
         <option value="{{prf}}">{{proofreaders[prf]}}</option>"
