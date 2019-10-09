@@ -114,7 +114,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.8.8'
+__version__ = '0.8.9'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -688,27 +688,22 @@ def get_unassigned_project_tasks(ipd, project_id, num_tasks):
     return tasks
 
 
-def project_summary_query(protocol, start, stop):
+def project_summary_query(ipd):
     ''' Build a project summary query
         Keyword arguments:
-          start: start date
-          stop: stop date
-          protocol: protocol
+          ipd: request payload
         Returns:
           SQL query
     '''
     sql = READ['PSUMMARY']
     clause = []
-    protocols = []
-    if protocol:
-        for pro in protocol.split(','):
-            protocols.append("'" + pro + "'")
-        protocol_str = ','.join(protocols)
+    if 'protocol' in ipd and ipd['protocol']:
+        protocol_str = json.dumps(ipd['protocol']).strip('[]')
         clause.append(" t.protocol IN (%s)" % protocol_str)
-    if start:
-        clause.append(" DATE(p.create_date) >= '%s'" % start)
-    if stop:
-        clause.append(" DATE(p.create_date) <= '%s'" % stop)
+    if 'start_date' in ipd and ipd['start_date']:
+        clause.append(" DATE(p.create_date) >= '%s'" % ipd['start_date'])
+    if 'stop_date' in ipd and ipd['stop_date']:
+        clause.append(" DATE(p.create_date) <= '%s'" % ipd['stop_date'])
     if clause:
         where = ' AND '.join(clause)
         sql = sql.replace('GROUP BY', 'WHERE ' + where + ' GROUP BY')
@@ -803,6 +798,20 @@ def build_protocols_table(user):
               + '<th>Enabled</th></tr></thead><tbody>' \
               + ''.join(parray) + '</tbody></table>'
     return ptable
+
+
+def protocol_select_list(result):
+    ''' Return valid protocols as options for a <select>
+        Keyword arguments:
+          result: result dictionary
+    '''
+    execute_sql(result, "SELECT cv_term FROM cv_term_vw WHERE cv='protocol' ORDER BY 1", 'temp')
+    protocols = ''
+    for row in result['temp']:
+        if bool(row['cv_term'] in sys.modules):
+            protocols += '<option value="%s" SELECTED>%s</option>' \
+                % (row['cv_term'], row['cv_term'])
+    return protocols
 
 
 def check_project(project, ipd):
@@ -1685,11 +1694,8 @@ def download(fname):
                                title='Download error', message=err)
 
 
-@app.route('/projectlist')
-@app.route('/projectlist/<protocol>')
-@app.route('/projectlist/<protocol>/<start>')
-@app.route('/projectlist/<protocol>/<start>/<stop>')
-def show_projects(protocol='', start='', stop=''): # pylint: disable=R0914
+@app.route('/projectlist', methods=['GET', 'POST'])
+def show_projects(): # pylint: disable=R0914
     ''' Projects
     '''
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
@@ -1697,13 +1703,15 @@ def show_projects(protocol='', start='', stop=''): # pylint: disable=R0914
                         + "redirect=" + request.url_root)
     user, face = get_web_profile()
     permissions = check_permission(user)
+    result = initialize_result()
+    ipd = receive_payload(result)
     try:
-        g.c.execute(project_summary_query(protocol, start, stop))
+        g.c.execute(project_summary_query(ipd))
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    newproject = protocols = ''
+    newproject = ''
     if rows:
         header = ['Protocol', 'Group', 'Project', 'Tasks', 'Disposition', 'Priority',
                   'Created', 'Active']
@@ -1740,13 +1748,9 @@ def show_projects(protocol='', start='', stop=''): # pylint: disable=R0914
                    % (downloadable) + 'role="button">Download table</a>' + projects
     else:
         projects = "There are no projects"
-    result = initialize_result()
-    execute_sql(result, "SELECT cv_term FROM cv_term_vw WHERE cv='protocol' ORDER BY 1", 'temp')
-    selected = protocol.split(',') if protocol else []
-    for row in result['temp']:
-        if bool(row['cv_term'] in sys.modules):
-            sel = 'SELECTED' if (not selected or row['cv_term'] in selected) else ''
-            protocols += '<option value="%s" %s>%s</option>' % (row['cv_term'], sel, row['cv_term'])
+    if request.method == 'POST':
+        return {"projects": projects}
+    protocols = protocol_select_list(result)
     if check_permission(user, 'admin'):
         newproject = '''
         <select id="pprotocol" onchange='new_project(this);'>
@@ -1758,7 +1762,7 @@ def show_projects(protocol='', start='', stop=''): # pylint: disable=R0914
         newproject += '</select><hr style="border: 1px solid gray">'
     navbar = generate_navbar('Projects')
     return render_template('projectlist.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar, start=start, stop=stop,
+                           dataset=app.config['DATASET'], navbar=navbar,
                            newproject=newproject, protocols=protocols, projects=projects)
 
 

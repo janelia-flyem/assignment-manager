@@ -5,6 +5,7 @@
 <link href="https://unpkg.com/gijgo@1.9.13/css/gijgo.min.css" rel="stylesheet" type="text/css" />
 {% endblock %}
 {% block script %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 <script src="https://unpkg.com/gijgo@1.9.13/js/gijgo.min.js" type="text/javascript"></script>
 <script>
@@ -33,7 +34,41 @@ function change_date()
   if ($('#stop').val()) {
     url += '/' + $('#stop').val();
   }
-  window.location.href = url;
+  token = $.cookie('assignment-manager-token')
+  array = {"protocol": $('#protocol').val(),
+           "start_date": $('#start').val(),
+           "stop_date": $('#stop').val()}
+  $.ajax({
+    url: '/projectlist',
+    headers: {"Authorization": 'Bearer ' + token },
+    type: 'POST',
+    dataType: 'json',
+    data: JSON.stringify(array),
+    contentType:'application/json',
+    cache: false,
+    async: true,
+    success: function(result) {
+      $('#container').html(result['projects']);
+    },
+    error: function(xhr, ajaxOptions, thrownError, dataType) {
+      if (xhr.status == 401) {
+        $('#sb').html('Create project');
+        alert("You are not authenticated");
+        $('#sb').prop('disabled', false);
+      }
+      else {
+        $('#sb').html('Create project');
+        $('#sb').prop('disabled', false);
+        try {
+          data = JSON.parse(xhr.responseText);
+          alert(xhr.status + ': ' + thrownError + "\n" + data.rest.error);
+        }
+        catch {
+          alert(xhr.status + ': ' + thrownError);
+        }
+      }
+    }
+  });
 }
 $('select').selectpicker();
 </script>
@@ -51,11 +86,11 @@ onload="tableInitialize();"
   <div style='float: left;margin-left: 10px;'>Stop date:</div><div style='float: left;margin-left: 10px;'><input id="stop" width=200></div>
   <div style='float: left;margin-left: 10px;'>
   Select protocol:
-  <select id="protocol" class="selectpicker" multiple=1 data-live-search="true" onchange='select_protocol(this);'>
+  <select id="protocol" class="selectpicker" multiple=1 data-live-search="true">
   {{protocols|safe}}
   </select>
   </div>
-  <div style='float: left;margin-left: 10px;'><button type="submit" class="btn btn-outline-success btn-sm" onclick="change_date(); href='#'">Reselect projects</button></div>
+  <div style='float: left;margin-left: 10px;'><button type="submit" class="btn btn-outline-success btn-sm" onclick="change_date();" href='#'>Reselect projects</button></div>
   </div>
   <script>
     $('#start').datepicker({ uiLibrary: 'bootstrap4', format: 'yyyy-mm-dd', value: '{{start}}', minDate: '2019-09-01' });
@@ -69,5 +104,7 @@ onload="tableInitialize();"
   <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button>
   </div>
   <br>
+  <div id="container">
   {{ projects|safe }}
+  </div>
 {% endblock %}
