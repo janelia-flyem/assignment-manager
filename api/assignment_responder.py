@@ -114,7 +114,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.9.0'
+__version__ = '0.9.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -537,9 +537,11 @@ def generate_project(protocol, result):
     method = projectins.task_populate_method
     globals()[method](projectins, result, ipd)
     if not result['tasks']:
-        return
+        return 1
     # We have tasks! Create a project (unless it already exists).
     project = get_project_by_name_or_id(ipd['project_name'])
+    if project and not ('append' in ipd and ipd['append']):
+        return 0
     existing_project = False
     if project:
         ipd['project_name'] = project['name']
@@ -560,6 +562,7 @@ def generate_project(protocol, result):
     result['rest']['row_count'] += g.c.rowcount
     # Insert tasks into the database
     generate_tasks(result, projectins.unit, projectins.task_insert_props, existing_project)
+    return 1
 
 
 def get_project_properties(project):
@@ -858,16 +861,16 @@ def process_projectparms(projectins):
     required = optional = optionaljs = filt = filtjs = ''
     # ROI is required for NeuPrint queries
     if projectins.task_populate_method == 'query_neuprint':
-        required += '<div class="grid-item">Select ROIs:</div><div class="grid-item">' \
-                    + '<select id="roi" class="selectpicker" multiple data-live-search="true"' \
-                    + ' onchange="create_project(1);">'
+        filt += '<div class="grid-item">Select ROIs:</div><div class="grid-item">' \
+                + '<select id="roi" class="selectpicker" multiple data-live-search="true"' \
+                + ' onchange="create_project(1);">'
         payload = "MATCH (n:Meta:%s) RETURN n.superLevelRois" % (app.config['DATASET'].lower())
         rois = neuprint_custom_query(payload)
         rlist = rois['data'][0][0]
         rlist.sort()
         for roi in rlist:
-            required += '<option>%s</option>' % roi
-        required += '</select></div>'
+            filt += '<option>%s</option>' % roi
+        filt += '</select></div>'
     required += '''
     <div class="grid-item">Priority:</div>
     <div class="grid-item"><input id="slider" width="300" value="10"/><span style="font-size:14pt; color:#fff;" id="priority"></span> (1-50; 1=highest)</div>
@@ -887,7 +890,7 @@ def process_projectparms(projectins):
         if opt == 'roi':
             continue
         if opt == 'status':
-            optional += '<div class="grid-item">Select statuses:</div><div class="grid-item">' \
+            filt += '<div class="grid-item">Select statuses:</div><div class="grid-item">' \
                         + '<select id="status" class="selectpicker" multiple ' \
                         + 'data-live-search="true" onchange="create_project(1);">'
             payload = "MATCH (n:`%s-Neuron`) RETURN DISTINCT n.status" \
@@ -896,9 +899,9 @@ def process_projectparms(projectins):
             rlist = [i[0] for i in statuses['data'] if i[0]]
             rlist.sort()
             for stat in rlist:
-                optional += '<option>%s</option>' % stat
-            optional += '</select></div>'
-            optionaljs += "if ($('#status').val()) {array['status'] = " \
+                filt += '<option>%s</option>' % stat
+            filt += '</select></div>'
+            filtjs += "if ($('#status').val()) {array['status'] = " \
                           + "$('#status').val().join(','); }"
             continue
         optional += '<div class="grid-item">%s:</div><div class="grid-item"><input id="%s"></div>' \
@@ -1846,8 +1849,8 @@ def assign_tasks(): # pylint: disable=R0914
         user, face = get_web_profile()
     if not check_permission(user, 'admin'):
         return render_template('error.html', urlroot=request.url_root,
-                               title='Not authorized',
-                               message="You are not authorized to assign tasks")
+                               title='Permission error',
+                               message="You don't have permission to assign tasks")
     try:
         g.c.execute(READ['UPSUMMARY'])
         rows = g.c.fetchall()
@@ -3119,6 +3122,12 @@ def process_project(protocol):
         required: false
         description: project group
       - in: query
+        name: append
+        schema:
+          type: string
+        required: false
+        description: allow appending to existing project if included
+      - in: query
         name: note
         schema:
           type: string
@@ -3158,7 +3167,8 @@ def process_project(protocol):
     if not check_permission(result['rest']['user'], 'admin'):
         raise InvalidUsage("You don't have permission to create projects")
     # Create the project
-    generate_project(protocol, result)
+    if not generate_project(protocol, result):
+        raise InvalidUsage("Project already exists")
     return generate_response(result)
 
 
