@@ -114,7 +114,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.9.1'
+__version__ = '0.9.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -613,7 +613,7 @@ def get_assigned_tasks(tasks, user):
         for task in tasks:
             num_assigned += int(task['num'])
             link = '<a href="/assignment/%s">%s</a>' % (task['assignment'], task['assignment'])
-            if 'admin' not in permissions and task['user'] != user:
+            if 'admin' not in permissions and 'view' not in permissions and task['user'] != user:
                 task['proofreader'] = '-'
                 link = task['assignment']
             duration = ''
@@ -778,12 +778,12 @@ def select_user(project, ipd, result):
     return assignment_user
 
 
-def build_protocols_table(user):
+def build_protocols_table(calling_user, user):
     ''' Generate a user protocol table.
         Keyword arguments:
           user: user instance
     '''
-    permissions = user['permissions'].split(',')
+    permissions = user['permissions'].split(',') if user['permissions'] else []
     g.c.execute("SELECT cv_term,display_name FROM cv_term_vw WHERE cv='protocol' ORDER BY 1")
     rows = g.c.fetchall()
     parray = []
@@ -805,14 +805,16 @@ def build_protocols_table(user):
              + ''.join(parray) + '</tbody></table>'
     # Administrative
     parray = []
-    val = 'checked="checked"' if 'admin' in permissions else ''
-    check = '<input type="checkbox" %s id="%s" onchange="changebox(this);">' \
-            % (val, 'admin')
-    parray.append(template % ('Administrative', check))
+    disabled = '' if check_permission(calling_user, ['admin', 'super']) else 'disabled'
+    for special in ['admin', 'view']:
+        val = 'checked="checked"' if special in permissions else ''
+        check = '<input type="checkbox" %s id="%s" %s onchange="changebox(this);">' \
+                % (val, special, disabled)
+        parray.append(template % (special, check))
     ptable += '<table><thead><tr style="color:#069"><th>Permission</th>' \
               + '<th>Enabled</th></tr></thead><tbody>' \
               + ''.join(parray) + '</tbody></table>'
-    for perm in ['admin', 'super']:
+    for perm in ['admin', 'super', 'view']:
         if perm in permissions:
             permissions.remove(perm)
     if permissions:
@@ -1097,7 +1099,7 @@ def build_assignment_table(user, ipd): # pylint: disable=R0914
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    permission = check_permission(user, 'admin')
+    permission = check_permission(user, ['admin', 'view'])
     for row in rows:
         if permission or row['name'] == user:
             proofreaders += '<option value="%s">%s</option>' \
@@ -1600,7 +1602,7 @@ def user_list():
         return redirect("https://emdata1.int.janelia.org:15000/login?"
                         + "redirect=/")
     user, face = get_web_profile()
-    if not check_permission(user, 'admin'):
+    if not check_permission(user, ['admin', 'view']):
         return redirect("/profile")
     try:
         g.c.execute('SELECT * FROM user_vw ORDER BY janelia_id')
@@ -1627,7 +1629,7 @@ def user_protocol_list(protocol):
         return redirect("https://emdata1.int.janelia.org:15000/login?"
                         + "redirect=/")
     user, face = get_web_profile()
-    if not check_permission(user, 'admin'):
+    if not check_permission(user, ['admin', 'view']):
         return render_template('error.html', urlroot=request.url_root,
                                title='Permission error',
                                message="You don't have permission to view another user's protocols")
@@ -1670,7 +1672,7 @@ def user_config(uname):
         return redirect("https://emdata1.int.janelia.org:15000/login?"
                         + "redirect=/")
     user, face = get_web_profile()
-    if not check_permission(user, 'admin'):
+    if not check_permission(user, ['admin', 'view']):
         return render_template('error.html', urlroot=request.url_root,
                                title='Permission error',
                                message="You don't have permission to view another user's profile")
@@ -1688,7 +1690,7 @@ def user_config(uname):
     uprops.append(['Name:', ' '.join([rec['first'], rec['last']])])
     uprops.append(['Janelia ID:', rec['janelia_id']])
     uprops.append(['Organization:', rec['organization']])
-    ptable = build_protocols_table(rec)
+    ptable = build_protocols_table(user, rec)
     navbar = generate_navbar('Users')
     return render_template('user.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], user=uname, navbar=navbar,
@@ -1759,7 +1761,8 @@ def show_projects(): # pylint: disable=R0914
         fileoutput = ''
         ftemplate = "\t".join(["%s"]*8) + "\n"
         for row in rows:
-            if 'admin' not in permissions and row['protocol'] not in permissions:
+            if 'admin' not in permissions and 'view' not in permissions \
+               and row['protocol'] not in permissions:
                 continue
             rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
             if not row['disposition']:
@@ -2016,7 +2019,7 @@ def show_assignment(aname):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    if not check_permission(user, 'admin') and assignment['user'] != user:
+    if not check_permission(user, ['admin', 'view']) and assignment['user'] != user:
         return render_template('error.html', urlroot=request.url_root,
                                title='No permission',
                                message="You don't have permission to view " \
@@ -2066,7 +2069,7 @@ def show_task(task_id):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    if not check_permission(user, 'admin') and task['user'] != user:
+    if not check_permission(user, ['admin', 'view']) and task['user'] != user:
         return render_template('error.html', urlroot=request.url_root,
                                title='No permission',
                                message="You don't have permission to view " \
@@ -4378,7 +4381,7 @@ def add_user_permission(): # pragma: no cover
     result = initialize_result()
     ipd = receive_payload(result)
     check_missing_parms(ipd, ['name', 'permissions'])
-    if not check_permission(result['rest']['user'], 'admin'):
+    if not check_permission(result['rest']['user'], ['admin', 'super']):
         raise InvalidUsage("You don't have permission to change user permissions")
     if type(ipd['permissions']).__name__ != 'list':
         raise InvalidUsage('Permissions must be specified as a list')
@@ -4418,7 +4421,7 @@ def delete_user_permission(): # pragma: no cover
     ipd = receive_payload(result)
     check_missing_parms(ipd, ['name', 'permissions'])
     if not check_permission(result['rest']['user'], 'admin'):
-        raise InvalidUsage("You don't have permission to change user permissions")
+        raise InvalidUsage("You don't have permission to delete user permissions")
     if type(ipd['permissions']).__name__ != 'list':
         raise InvalidUsage('Permissions must be specified as a list')
     result['rest']['row_count'] = 0
