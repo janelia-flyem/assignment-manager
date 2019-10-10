@@ -21,19 +21,8 @@ function new_project(sel) {
   window.location.href = '/newproject/' + sel.value;
 }
 
-function change_date()
+function get_projects()
 {
-  protocols = $('#protocol').val();
-  if ($('#start').val()) {
-    start = $('#start').val();
-  }
-  else {
-    start = '2019-09-01';
-  }
-  url = '/projectlist/' + protocols + '/' + start;
-  if ($('#stop').val()) {
-    url += '/' + $('#stop').val();
-  }
   token = $.cookie('assignment-manager-token')
   array = {"protocol": $('#protocol').val(),
            "start_date": $('#start').val(),
@@ -90,7 +79,7 @@ onload="tableInitialize();"
   {{protocols|safe}}
   </select>
   </div>
-  <div style='float: left;margin-left: 10px;'><button type="submit" class="btn btn-outline-success btn-sm" onclick="change_date();" href='#'>Reselect projects</button></div>
+  <div style='float: left;margin-left: 10px;'><button type="submit" class="btn btn-outline-success btn-sm" onclick="get_projects();" href='#'>Reselect projects</button></div>
   </div>
   <script>
     $('#start').datepicker({ uiLibrary: 'bootstrap4', format: 'yyyy-mm-dd', value: '{{start}}', minDate: '2019-09-01' });

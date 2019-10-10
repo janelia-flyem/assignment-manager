@@ -114,7 +114,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.8.9'
+__version__ = '0.9.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -242,7 +242,6 @@ def initialize_result():
             authuser = dtok['email']
             if not get_user_id(authuser):
                 raise InvalidUsage('User %s is not known to the assignment_manager' % authuser)
-            #authuser = 'robsvi@gmail.com'
             app.config['AUTHORIZED'][token] = authuser
         result['rest']['user'] = authuser
         app.config['USERS'][authuser] = app.config['USERS'].get(authuser, 0) + 1
@@ -710,6 +709,31 @@ def project_summary_query(ipd):
     return sql
 
 
+def assignment_query(ipd):
+    ''' Build an assignment query
+        Keyword arguments:
+          ipd: request payload
+        Returns:
+          SQL query
+    '''
+    sql = "SELECT * from project_stats_vw"
+    clause = []
+    if 'protocol' in ipd and ipd['protocol']:
+        protocol_str = json.dumps(ipd['protocol']).strip('[]')
+        clause.append(" protocol IN (%s)" % protocol_str)
+    if 'proofreader' in ipd and ipd['proofreader']:
+        proofreader_str = json.dumps(ipd['proofreader']).strip('[]')
+        clause.append(" user IN (%s)" % proofreader_str)
+    if 'start_date' in ipd and ipd['start_date']:
+        clause.append(" DATE(create_date) >= '%s'" % ipd['start_date'])
+    if 'stop_date' in ipd and ipd['stop_date']:
+        clause.append(" DATE(create_date) <= '%s'" % ipd['stop_date'])
+    if clause:
+        sql += ' AND '.join(clause)
+        sql = sql.replace('project_stats_vw', 'project_stats_vw WHERE ')
+    return sql
+
+
 def get_incomplete_assignment_tasks(assignment_id):
     ''' Get a list of completed tasks for an assignment
         Keyword arguments:
@@ -1052,7 +1076,7 @@ def complete_assignment(ipd, result, assignment, incomplete_okay=False):
     publish_kafka('assignment_complete', result, message)
 
 
-def build_assignment_table(user, start, stop): # pylint: disable=R0914
+def build_assignment_table(user, ipd): # pylint: disable=R0914
     ''' Get a list of all assignments and return as a table.
         Also return a dictionary of proofreaders and protocols.
         Keyword arguments:
@@ -1062,31 +1086,28 @@ def build_assignment_table(user, start, stop): # pylint: disable=R0914
         Returns:
           Dictionary of proofreaders
           Assignments HTML
-          Dictionary of rotocols
     '''
-    sql = "SELECT * FROM project_stats_vw"
-    if (start or stop):
-        clause = []
-        if start:
-            clause.append(" DATE(create_date) >= '%s'" % start)
-        if stop:
-            clause.append(" DATE(create_date) <= '%s'" % stop)
-        where = ' AND '.join(clause)
-        sql += ' WHERE ' + where
-    if not check_permission(user, 'admin'):
-        if (start or stop):
-            sql += ' AND '
-        else:
-            sql += ' WHERE '
-        sql += "user='" + user + "'"
+    proofreaders = ''
+    try:
+        g.c.execute("SELECT name,CONCAT(last,', ',first) AS proofreader FROM user ORDER BY 2")
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    permission = check_permission(user, 'admin')
+    for row in rows:
+        if permission or row['name'] == user:
+            proofreaders += '<option value="%s">%s</option>' \
+                % (row['name'], row['proofreader'])
+    if not permission:
+        ipd['proofreader'] = user
+    sql = assignment_query(ipd)
     try:
         g.c.execute(sql)
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    proofreaders = dict()
-    protocols = dict()
     if rows:
         header = ['Proofreader', 'Project', 'Protocol', 'Assignment', 'Started', 'Completed',
                   'Task disposition', 'Task count']
@@ -1103,12 +1124,11 @@ def build_assignment_table(user, start, stop): # pylint: disable=R0914
             rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
             if not row['task_disposition']:
                 rclass = 'notstarted'
-            name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
-            rclass += ' ' + name
-            proofreaders[name] = row['proofreader']
-            name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
-            rclass += ' ' + name
-            protocols[name] = row['protocol']
+            #name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
+            #rclass += ' ' + name
+            #proofreaders[name] = row['proofreader']
+            #name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
+            #rclass += ' ' + name
             proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             assn = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
             assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
@@ -1123,7 +1143,7 @@ def build_assignment_table(user, start, stop): # pylint: disable=R0914
                       % (downloadable) + 'role="button">Download table</a>' + assignments
     else:
         assignments = "There are no open assignments"
-    return proofreaders, assignments, protocols
+    return proofreaders, assignments
 
 
 def get_task_by_key(pid, key_type, key):
@@ -1421,6 +1441,16 @@ def generate_navbar(active):
                 if subhead in sys.modules:
                     nav += '<a class="dropdown-item" href="/userlist/%s">%s</a>' \
                            % (subhead, app.config['PROTOCOLS'][subhead])
+            nav += '</div></li>'
+        elif heading == 'Assignments':
+            nav += '<li class="nav-item dropdown active">' \
+                if heading == active else '<li class="nav-item">'
+            nav += '<a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" ' \
+                   + 'role="button" data-toggle="dropdown" aria-haspopup="true" ' \
+                   + 'aria-expanded="false">Assignments</a><div class="dropdown-menu" '\
+                   + 'aria-labelledby="navbarDropdown">'
+            nav += '<a class="dropdown-item" href="/assignmentlist">Show</a>' \
+                   + '<a class="dropdown-item" href="/assigntasks">Generate</a>'
             nav += '</div></li>'
         else:
             nav += '<li class="nav-item active">' if heading == active else '<li class="nav-item">'
@@ -1731,8 +1761,6 @@ def show_projects(): # pylint: disable=R0914
             rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
             if not row['disposition']:
                 rclass = 'open'
-            name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
-            rclass += ' ' + name
             proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             active = "<span style='color:%s'>%s</span>" \
                      % (('lime', 'YES') if row['active'] else ('red', 'NO'))
@@ -1767,10 +1795,8 @@ def show_projects(): # pylint: disable=R0914
 
 
 @app.route('/')
-@app.route('/assignmentlist')
-@app.route('/assignmentlist/<start>')
-@app.route('/assignmentlist/<start>/<stop>')
-def show_assignments(start='', stop=''): # pylint: disable=R0914
+@app.route('/assignmentlist', methods=['GET', 'POST'])
+def show_assignments(): # pylint: disable=R0914
     ''' Default route
     '''
     if not request.cookies.get(app.config['TOKEN']):
@@ -1785,54 +1811,85 @@ def show_assignments(start='', stop=''): # pylint: disable=R0914
     face = ''
     if request.cookies.get(app.config['TOKEN']):
         user, face = get_web_profile()
-    proofreaders, assignments, protocols = build_assignment_table(user, start, stop)
-    if check_permission(user, 'admin'):
-        try:
-            g.c.execute(READ['UPSUMMARY'])
-            rows = g.c.fetchall()
-        except Exception as err:
-            return render_template('error.html', urlroot=request.url_root,
-                                   title='SQL error', message=sql_error(err))
-        if rows:
-            header = ['Protocol', 'Group', 'Project', 'Tasks', 'Priority', 'Active', 'Assignment']
-            unassigned = '''
-            <table id="unassigned" class="tablesorter standard">
-            <tr><th>
-            '''
-            unassigned += '</th><th>'.join(header) + '</th></tr></thead><tbody>'
-            template = "<tr>" + ''.join("<td>%s</td>")*3 \
-                       + ''.join('<td style="text-align: center">%s</td>')*4 + "</tr>"
-            fileoutput = ''
-            ftemplate = "\t".join(["%s"]*7) + "\n"
-            for row in rows:
-                active = "<span style='color:%s'>%s</span>" \
-                         % (('lime', 'YES') if row['active'] else ('red', 'NO'))
-                button = '' if not row['active'] else \
-                         '<a class="btn btn-success btn-tiny" style="color:#fff" href="' \
-                         + '/assignto/' + row['project'] + '" role="button">Create</a>'
-                unassigned += template % (row['protocol'], row['project_group'],
-                                          ('<a href="/project/%s">%s</a>' % (row['project'], \
-                                           row['project'])),
-                                          row['num'], row['priority'], active, button)
-                fileoutput += ftemplate % (row['protocol'], row['project_group'], row['project'],
-                                           row['num'], row['priority'], row['active'], '-')
-            unassigned += "</tbody></table>"
-            downloadable = create_downloadable('unassigned', header, ftemplate, fileoutput)
-            unassigned = '<br><h2>Projects with unassigned tasks</h2>' \
-                         + '<a class="btn btn-outline-info btn-sm" href="/download/%s" ' \
-                         % (downloadable) + 'role="button">Download table</a>' + unassigned
-        else:
-            unassigned = "There are no projects with unassigned tasks"
-    else:
-        unassigned = ''
+    result = initialize_result()
+    ipd = receive_payload(result)
+    proofreaders, assignments = build_assignment_table(user, ipd)
+    if request.method == 'POST':
+        return {"assignments": assignments}
+    protocols = protocol_select_list(result)
     if not token:
         token = ''
     navbar = generate_navbar('Assignments')
     response = make_response(render_template('assignmentlist.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
-                                             navbar=navbar, start=start, stop=stop,
-                                             assignments=assignments, protocols=protocols,
-                                             proofreaders=proofreaders, unassigned=unassigned))
+                                             navbar=navbar, assignments=assignments,
+                                             protocols=protocols, proofreaders=proofreaders,))
+    response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
+    return response
+
+
+@app.route('/assigntasks')
+def assign_tasks(): # pylint: disable=R0914
+    ''' Default route
+    '''
+    if not request.cookies.get(app.config['TOKEN']):
+        if request.cookies.get('flyem-services'):
+            token = get_token()
+            user, face = get_web_profile(token)
+        else:
+            return redirect("https://emdata1.int.janelia.org:15000/login?"
+                            + "redirect=" + request.url_root)
+    else:
+        token = request.cookies.get(app.config['TOKEN'])
+    face = ''
+    if request.cookies.get(app.config['TOKEN']):
+        user, face = get_web_profile()
+    if not check_permission(user, 'admin'):
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Not authorized',
+                               message="You are not authorized to assign tasks")
+    try:
+        g.c.execute(READ['UPSUMMARY'])
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    if rows:
+        header = ['Protocol', 'Group', 'Project', 'Tasks', 'Priority', 'Active', 'Assignment']
+        unassigned = '''
+        <table id="unassigned" class="tablesorter standard">
+        <tr><th>
+        '''
+        unassigned += '</th><th>'.join(header) + '</th></tr></thead><tbody>'
+        template = "<tr>" + ''.join("<td>%s</td>")*3 \
+                   + ''.join('<td style="text-align: center">%s</td>')*4 + "</tr>"
+        fileoutput = ''
+        ftemplate = "\t".join(["%s"]*7) + "\n"
+        for row in rows:
+            active = "<span style='color:%s'>%s</span>" \
+                     % (('lime', 'YES') if row['active'] else ('red', 'NO'))
+            button = '' if not row['active'] else \
+                        '<a class="btn btn-success btn-tiny" style="color:#fff" href="' \
+                        + '/assignto/' + row['project'] + '" role="button">Create</a>'
+            unassigned += template % (row['protocol'], row['project_group'],
+                                      ('<a href="/project/%s">%s</a>' % (row['project'], \
+                                       row['project'])),
+                                      row['num'], row['priority'], active, button)
+            fileoutput += ftemplate % (row['protocol'], row['project_group'], row['project'],
+                                       row['num'], row['priority'], row['active'], '-')
+        unassigned += "</tbody></table>"
+        downloadable = create_downloadable('unassigned', header, ftemplate, fileoutput)
+        unassigned = '<br><h2>Projects with unassigned tasks</h2>' \
+                     + '<a class="btn btn-outline-info btn-sm" href="/download/%s" ' \
+                     % (downloadable) + 'role="button">Download table</a>' + unassigned
+    else:
+        unassigned = "There are no projects with unassigned tasks"
+    if not token:
+        token = ''
+    navbar = generate_navbar('Assignments')
+    response = make_response(render_template('assigntasks.html', urlroot=request.url_root,
+                                             face=face, dataset=app.config['DATASET'],
+                                             navbar=navbar, unassigned=unassigned))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
 

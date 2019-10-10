@@ -5,6 +5,7 @@
 <link href="https://unpkg.com/gijgo@1.9.13/css/gijgo.min.css" rel="stylesheet" type="text/css" />
 {% endblock %}
 {% block script %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 <script src="https://unpkg.com/gijgo@1.9.13/js/gijgo.min.js" type="text/javascript"></script>
 <script>
@@ -13,50 +14,46 @@ function show_all() {
   $(".complete").show();
   $('#hc').removeAttr("disabled");
   $('#ho').removeAttr("disabled");
-  $('#proofreader').val('all');
-  $('#protocol').val('all');
 }
 
-function select_proofreader(sel) {
-  selected = sel.value
-  $("#proofreader > option").each(function() {
-    if (selected == 'all' || selected == this.value) {
-      $("."+this.value).show()
-    }
-    else {
-      $("."+this.value).hide()
-    }
-  });
-  $('#hc').removeAttr("disabled");
-  $('#ho').removeAttr("disabled");
-}
-function select_protocol(sel) {
-  selected = sel.value
-  $("#protocol > option").each(function() {
-    if (selected == 'all' || selected == this.value) {
-      $("."+this.value).show()
-    }
-    else {
-      $("."+this.value).hide()
-    }
-  });
-  $('#hc').removeAttr("disabled");
-  $('#ho').removeAttr("disabled");
-}
-
-function change_date()
+function get_assignments()
 {
-  if ($('#start').val()) {
-    start = $('#start').val();
-  }
-  else {
-    start = '2019-09-01';
-  }
-  url = '/assignmentlist/' + start;
-  if ($('#stop').val()) {
-    url += '/' + $('#stop').val();
-  }
-  window.location.href = url;
+  token = $.cookie('assignment-manager-token')
+  array = {"protocol": $('#protocol').val(),
+           "proofreader": $('#proofreader').val(),
+           "start_date": $('#start').val(),
+           "stop_date": $('#stop').val()}
+  $.ajax({
+    url: '/assignmentlist',
+    headers: {"Authorization": 'Bearer ' + token },
+    type: 'POST',
+    dataType: 'json',
+    data: JSON.stringify(array),
+    contentType:'application/json',
+    cache: false,
+    async: true,
+    success: function(result) {
+      $('#container').html(result['assignments']);
+    },
+    error: function(xhr, ajaxOptions, thrownError, dataType) {
+      if (xhr.status == 401) {
+        $('#sb').html('Create project');
+        alert("You are not authenticated");
+        $('#sb').prop('disabled', false);
+      }
+      else {
+        $('#sb').html('Create project');
+        $('#sb').prop('disabled', false);
+        try {
+          data = JSON.parse(xhr.responseText);
+          alert(xhr.status + ': ' + thrownError + "\n" + data.rest.error);
+        }
+        catch {
+          alert(xhr.status + ': ' + thrownError);
+        }
+      }
+    }
+  });
 }
 $('select').selectpicker();
 </script>
@@ -71,7 +68,19 @@ onload="tableInitialize();"
   <div style='float: left;margin:10px 0 15px 0;'>
   <div style='float: left'>Start date:</div><div style='float: left;margin-left: 10px;'><input id="start" width=200></div>
   <div style='float: left;margin-left: 10px;'>Stop date:</div><div style='float: left;margin-left: 10px;'><input id="stop" width=200></div>
-  <div style='float: left;margin-left: 10px;'><button type="submit" class="btn btn-outline-primary btn-sm" onclick="change_date(); href='#'">Change date range</button></div>
+  <div style='float: left;margin-left: 10px;'>
+  Select protocol:
+  <select id="protocol" class="selectpicker" multiple=1 data-live-search="true">
+  {{protocols|safe}}
+  </select>
+  </div>
+  <div style='float: left;margin-left: 10px;'>
+  Select proofreader:
+  <select id="proofreader" class="selectpicker" multiple=1 data-live-search="true">
+  {{proofreaders|safe}}
+  </select>
+  </div>
+  <div style='float: left;margin-left: 10px;'><button type="submit" class="btn btn-outline-success btn-sm" onclick="get_assignments();">Reselect assignments</button></div>
   </div>
   <script>
     $('#start').datepicker({ uiLibrary: 'bootstrap4', format: 'yyyy-mm-dd', value: '{{start}}', minDate: '2019-09-01' });
@@ -82,21 +91,8 @@ onload="tableInitialize();"
   <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
   <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
   <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide open</button>
-  Select protocol:
-  <select id="protocol" class="selectpicker" data-live-search="true" onchange='select_protocol(this);'>
-    <option value="all" SELECTED>All protocols</a>
-    {% for pro in protocols %}
-        <option value="{{pro}}">{{protocols[pro]}}</option>"
-    {% endfor %}
-  </select>
-  Select proofreader:
-  <select id="proofreader" class="selectpicker" data-live-search="true" onchange='select_proofreader(this);'>
-    <option value="all" SELECTED>All proofreaders</a>
-    {% for prf in proofreaders %}
-        <option value="{{prf}}">{{proofreaders[prf]}}</option>"
-    {% endfor %}
-  </select>
   </div>
+  <div id="container">
   {{ assignments|safe }}
-  {{ unassigned|safe }}
+  </div>
 {% endblock %}
