@@ -31,6 +31,7 @@ from assignment_utilities import (InvalidUsage, call_responder, check_permission
                                   working_duration)
 
 # pylint: disable=W0611
+from connection_validation import Connection_validation
 from orphan_link import Orphan_link
 from cleave import Cleave
 from todo import Todo
@@ -114,7 +115,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.9.2'
+__version__ = '0.10.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -781,6 +782,7 @@ def select_user(project, ipd, result):
 def build_protocols_table(calling_user, user):
     ''' Generate a user protocol table.
         Keyword arguments:
+          caslling_user: calling user
           user: user instance
     '''
     permissions = user['permissions'].split(',') if user['permissions'] else []
@@ -951,7 +953,6 @@ def generate_assignment(ipd, result):
             update_property(result['rest']['inserted_id'], 'assignment', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     updated = 0
-    print("Num tasks=%d" % num_tasks)
     if len(tasks) < num_tasks:
         num_tasks = len(tasks)
     print("Assigned %s to %s" % (ipd['name'], assignment_user))
@@ -3892,8 +3893,16 @@ def new_tasks_for_project(protocol, project_name):
     ipd['protocol'] = protocol
     ipd['project_name'] = project_name
     project = get_project_by_name_or_id(project_name)
-    if not isinstance(ipd['tasks'], (dict)):
-        raise InvalidUsage("Payload must be a JSON dictionary")
+    if 'tasks' in ipd:
+        if not isinstance(ipd['tasks'], (dict)):
+            raise InvalidUsage("tasks payload must be a JSON dictionary")
+    elif 'points' in ipd:
+        if not isinstance(ipd['points'], (list)):
+            raise InvalidUsage("points payload must be an array of arrays")
+        ipd['tasks'] = dict()
+        for pnt in ipd['points']:
+            name = '_'.join([str(i) for i in pnt])
+            ipd['tasks'][name] = {}
     if not project:
         if 'priority' not in ipd:
             ipd['priority'] = 10
