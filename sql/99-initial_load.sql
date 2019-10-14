@@ -47,6 +47,7 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('project',''),1,'size','Size','Size (number of voxels)');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('project',''),1,'note','Note','Project note');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('project',''),1,'group','Project group','Project group');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('project',''),1,'source','Source','Source');
 
 INSERT INTO cv (version,is_current,name,display_name,definition) VALUES (1,1,'assignment','Assignment','Assignment');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('assignment',''),1,'note','Note','Assignment note');

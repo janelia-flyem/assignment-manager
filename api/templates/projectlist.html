@@ -16,11 +16,9 @@ function show_all() {
   $('#hc').removeAttr("disabled");
   $('#ho').removeAttr("disabled");
 }
-
 function new_project(sel) {
   window.location.href = '/newproject/' + sel.value;
 }
-
 function get_projects()
 {
   token = $.cookie('assignment-manager-token')

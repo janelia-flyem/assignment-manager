@@ -22,7 +22,8 @@ function create_project(count=0) {
   }
   token = $.cookie('assignment-manager-token')
   array = {"project_name": $('#project_name').val(),
-           "priority": $('#priority').text()}
+           "priority": $('#priority').text(),
+           "source": "assignment-manager"}
   {{optionaljs|safe}}
   {{filtjs|safe}}
   array['roi'] = $('#roi').val().join(',');

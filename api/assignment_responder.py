@@ -115,7 +115,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.10.0'
+__version__ = '0.10.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -554,6 +554,7 @@ def generate_project(protocol, result):
             ipd['priority'] = 10
         insert_project(ipd, result)
     # Add project properties from input parameters
+    ipd['source'] = 'unknown' if 'source' not in ipd else ipd['source']
     for parm in projectins.optional_properties:
         if parm in ipd:
             update_property(result['rest']['inserted_id'], 'project', parm, ipd[parm])
@@ -891,7 +892,7 @@ def process_projectparms(projectins):
     '''
     # Optional parameters
     for opt in projectins.optional_properties:
-        if opt == 'roi':
+        if opt in ['roi', 'source']:
             continue
         if opt == 'status':
             filt += '<div class="grid-item">Select statuses:</div><div class="grid-item">' \
@@ -3899,6 +3900,8 @@ def new_tasks_for_project(protocol, project_name):
     elif 'points' in ipd:
         if not isinstance(ipd['points'], (list)):
             raise InvalidUsage("points payload must be an array of arrays")
+        if 'software' in ipd and ipd['software']:
+            ipd['source'] = ipd['software']
         ipd['tasks'] = dict()
         for pnt in ipd['points']:
             name = '_'.join([str(i) for i in pnt])

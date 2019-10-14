@@ -14,7 +14,7 @@ class Todo:
         self.num_tasks = 1
         self.task_populate_method = None
         self.unit = 'xyz'
-        self.optional_properties = ['note', 'group']
+        self.optional_properties = ['note', 'group', 'source']
         self.allowable_filters = []
         # self.no_assignment = True
         self.allowable_todo_types = ['diagnostic', 'irrelevant', 'merge', 'no_soma', 'split',
