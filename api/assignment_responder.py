@@ -1654,7 +1654,7 @@ def user_protocol_list(protocol):
     ulist = []
     for row in rows:
         link = '<a href="/user/%s">%s</a>' % (row['name'], row['name'])
-        val = 'checked="checked"' if protocol in row['permissions'] else ''
+        val = 'checked="checked"' if row['permissions'] and protocol in row['permissions'] else ''
         check = '<input type="checkbox" %s id="%s" onchange="changebox(this,%s);">' \
                  % (val, row['name'], "'" + protocol + "'")
         ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
