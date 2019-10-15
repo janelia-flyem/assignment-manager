@@ -11,7 +11,7 @@ class Todo:
         Keyword arguments:
           self: object
         '''
-        self.num_tasks = 1
+        self.num_tasks = 100
         self.task_populate_method = 'json_upload'
         self.unit = 'xyz'
         self.optional_properties = ['note', 'group', 'source']

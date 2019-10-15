@@ -144,6 +144,7 @@ CREATE TABLE `assignment` (
   `working_duration` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `assignment_name_uk_ind` (`name`) USING BTREE,
+  KEY `assignment_project_id_fk_ind` (`project_id`) USING BTREE,
   CONSTRAINT `assignment_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB AUTO_INCREMENT=1001 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;

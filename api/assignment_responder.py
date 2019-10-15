@@ -115,7 +115,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.0'
+__version__ = '0.11.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -765,13 +765,14 @@ def select_user(project, ipd, result):
     if 'user' in ipd:
         # On behalf of
         if not check_permission(result['rest']['user'], 'admin'):
-            raise InvalidUsage("You doesn't have permission to assign jobs")
+            raise InvalidUsage("You don't have permission to assign jobs")
         assignment_user, janelia_id = validate_user(ipd['user'])
         workday = get_workday(janelia_id)
         need_permission = workday['organization']
-        if not check_permission(result['rest']['user'], need_permission):
-            raise InvalidUsage("You doesn't have permission to assign jobs to %s"
-                               % (need_permission))
+        if ipd['user'] != result['rest']['user']:
+            if not check_permission(result['rest']['user'], need_permission):
+                raise InvalidUsage("You don't have permission to assign jobs to %s"
+                                   % (need_permission))
     else:
         assignment_user, janelia_id = validate_user(result['rest']['user'])
     if not check_permission(assignment_user, project['protocol']):
