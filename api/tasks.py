@@ -141,6 +141,7 @@ def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, result)
             result['rest']['row_count'] += g.c.rowcount
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
+    result['rest']['tasks_inserted'] = len(insert_list)
     # Select tasks to get IDs and build list of properties to insert
     result['tasks'] = dict()
     insert_list = []

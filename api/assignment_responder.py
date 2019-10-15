@@ -115,7 +115,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.10.1'
+__version__ = '0.11.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -876,6 +876,11 @@ def process_projectparms(projectins):
         for roi in rlist:
             filt += '<option>%s</option>' % roi
         filt += '</select></div>'
+    elif projectins.task_populate_method == 'json_upload':
+        required += '''
+        <div class="grid-item">JSON string:</div>
+        <div class="grid-item"><textarea class="form-control" id="input_json" rows="5"></textarea></div>
+        '''
     required += '''
     <div class="grid-item">Priority:</div>
     <div class="grid-item"><input id="slider" width="300" value="10"/><span style="font-size:14pt; color:#fff;" id="priority"></span> (1-50; 1=highest)</div>
@@ -1185,6 +1190,29 @@ def add_point(ipd, key, result):
         result['rest']['row_count'] += g.c.rowcount
 
 
+def parse_tasks(ipd):
+    ''' Parse tasks from inoput JSON
+        Keyword arguments:
+          ipd: request payload
+        Returns:
+          error message (or None if no errors)
+    '''
+    if 'tasks' in ipd:
+        if not isinstance(ipd['tasks'], (dict)):
+            return "tasks payload must be a JSON dictionary"
+    elif 'points' in ipd:
+        if not isinstance(ipd['points'], (list)):
+            return "points payload must be an array of arrays"
+        if 'source' not in ipd and 'software' in ipd and ipd['software']:
+            ipd['source'] = ipd['software']
+        ipd['tasks'] = dict()
+        for pnt in ipd['points']:
+            name = '_'.join([str(i) for i in pnt])
+            ipd['tasks'][name] = {}
+    return None
+
+
+
 def check_task(task, ipd, result):
     ''' Check to ensure that a task exists and can be changed by the current user.
         Keyword arguments:
@@ -1340,8 +1368,9 @@ def build_task_table(aname):
     """
     tasks = tasks % rows[0]['key_type_display']
     template = '<tr class="%s">' + ''.join('<td style="text-align: center">%s</td>')*7 + "</tr>"
-    tasks_started = 0
+    num_tasks = tasks_started = 0
     for row in rows:
+        num_tasks += 1
         if row['start_date']:
             tasks_started += 1
         duration = ''
@@ -1357,7 +1386,7 @@ def build_task_table(aname):
                              row['disposition'], row['start_date'], row['completion_date'],
                              duration)
     tasks += "</tbody></table>"
-    return tasks, tasks_started
+    return tasks, num_tasks, tasks_started
 
 
 def get_user_id(user):
@@ -2039,16 +2068,17 @@ def show_assignment(aname):
                 assignment[prop] = '<a href="/project/%s">%s</a>' \
                                    % (assignment[prop], assignment[prop])
             aprops.append([show, assignment[prop]])
-    tasks, tasks_started = build_task_table(aname)
+    tasks, num_tasks, tasks_started = build_task_table(aname)
     controls = ''
-    if not tasks_started and  check_permission(user, 'admin'):
+    if not tasks_started and check_permission(user, 'admin'):
         if assignment['start_date']:
             controls += '''
             <button type="button" class="btn btn-warning btn-sm" onclick='modify_assignment(%s,"reset");'>Reset assignment</button>
             '''
             controls = controls % (assignment['id'])
+    if num_tasks > tasks_started and check_permission(user, 'admin'):
         controls += '''
-        <button type="button" class="btn btn-danger btn-sm" onclick='modify_assignment(%s,"deleted");'>Delete assignment</button>
+        <button type="button" class="btn btn-danger btn-sm" onclick='modify_assignment(%s,"deleted");'>Remove unstarted tasks</button>
         '''
         controls = controls % (assignment['id'])
     navbar = generate_navbar('Assignments')
@@ -3795,23 +3825,30 @@ def delete_assignment(assignment_id):
     if not assignment:
         raise InvalidUsage("Assignment %s was not found" % assignment_id, 404)
     tasks = get_tasks_by_assignment_id(assignment_id)
+    del_assignment = True
     for task in tasks:
         if task['start_date']:
-            raise InvalidUsage("Assignment %s has one or more started tasks" % (assignment_id))
-    try:
-        stmt = "UPDATE task SET assignment_id=NULL WHERE assignment_id=%s"
-        bind = (assignment_id)
-        g.c.execute(stmt, bind)
-        result['rest']['row_count'] = g.c.rowcount
-        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
-        for task in tasks:
+            del_assignment = False
+            continue
+        try:
+            stmt = "UPDATE task SET assignment_id=NULL WHERE id=%s"
+            bind = (task['id'])
+            g.c.execute(stmt, bind)
+            result['rest']['row_count'] += g.c.rowcount
             bind = (task['id'], task['project_id'], assignment_id, task['key_type'],
                     task['key_text'], 'Unassigned', task['user'])
             g.c.execute(WRITE['TASK_AUDIT'], bind)
-        g.c.execute("DELETE from assignment WHERE id=%s", (assignment_id))
-        result['rest']['row_count'] += g.c.rowcount
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+    if del_assignment:
+        try:
+            stmt = "DELETE from assignment WHERE id=%s"
+            bind = (assignment_id)
+            g.c.execute(stmt, (assignment_id))
+            result['rest']['row_count'] += g.c.rowcount
+            result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
     g.db.commit()
     return generate_response(result)
 
@@ -3894,24 +3931,21 @@ def new_tasks_for_project(protocol, project_name):
     ipd['protocol'] = protocol
     ipd['project_name'] = project_name
     project = get_project_by_name_or_id(project_name)
-    if 'tasks' in ipd:
-        if not isinstance(ipd['tasks'], (dict)):
-            raise InvalidUsage("tasks payload must be a JSON dictionary")
-    elif 'points' in ipd:
-        if not isinstance(ipd['points'], (list)):
-            raise InvalidUsage("points payload must be an array of arrays")
-        if 'software' in ipd and ipd['software']:
-            ipd['source'] = ipd['software']
-        ipd['tasks'] = dict()
-        for pnt in ipd['points']:
-            name = '_'.join([str(i) for i in pnt])
-            ipd['tasks'][name] = {}
-    if not project:
+    error = parse_tasks(ipd)
+    if error:
+        raise InvalidUsage(error)
+    if project:
+        if project['protocol'] != protocol:
+            raise InvalidUsage("Additional tasks for an existing project " \
+                               + "must be in the same protocol")
+    else:
         if 'priority' not in ipd:
             ipd['priority'] = 10
         insert_project(ipd, result)
         project = dict()
         project['id'] = result['rest']['inserted_id']
+    if 'tasks' not in ipd:
+        raise InvalidUsage("No tasks found in JSON payload")
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
     if hasattr(projectins, 'validate_tasks'):

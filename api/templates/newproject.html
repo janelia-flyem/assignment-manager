@@ -9,6 +9,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 <script src="https://unpkg.com/gijgo@1.9.13/js/gijgo.min.js" type="text/javascript"></script>
 <script>
+function check_json() {
+  try {
+    var c = $.parseJSON($("#input_json").val());
+  }
+  catch (err) {
+    alert('Invalid JSON');
+    return(0);
+  }
+  return(1);
+}
+
 function create_project(count=0) {
   if (!count && $('#project_name').val() == "") {
     alert("Project name is required");
@@ -21,12 +32,22 @@ function create_project(count=0) {
     url = "/project/" + $('#protocol').val();
   }
   token = $.cookie('assignment-manager-token')
-  array = {"project_name": $('#project_name').val(),
-           "priority": $('#priority').text(),
-           "source": "assignment-manager"}
+  var array = {};
+  if ($("#input_json").length != 0) {
+    if (!check_json()) {
+      return(0);
+    }
+    url = "/tasks/" + $('#protocol').val() + "/" + $('#project_name').val();
+    array = JSON.parse($("#input_json").val());
+  }
+  array['project_name'] = $('#project_name').val();
+  array['priority'] = $('#priority').text();
+  array['source'] = 'assignment-manager';
   {{optionaljs|safe}}
   {{filtjs|safe}}
-  array['roi'] = $('#roi').val().join(',');
+  if ($("#roi").length != 0) {
+    array['roi'] = $('#roi').val().join(',');
+  }
   $('#sb').html(
     `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Creating...`
   );

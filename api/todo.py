@@ -12,7 +12,7 @@ class Todo:
           self: object
         '''
         self.num_tasks = 1
-        self.task_populate_method = None
+        self.task_populate_method = 'json_upload'
         self.unit = 'xyz'
         self.optional_properties = ['note', 'group', 'source']
         self.allowable_filters = []

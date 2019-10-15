@@ -32,7 +32,12 @@ function modify_assignment(assn,operation) {
       dataType: 'json',
       contentType:'application/json',
       success: function(result) {
-        alert("This assignment has been " + operation);
+        if (operation == 'reset') {
+          alert("This assignment has been " + operation);
+        }
+        else {
+          alert("Unstarted tasks have been removed");
+        }
         window.location.href = '/'
       },
       error: function (xhr, ajaxOptions, thrownError) {
