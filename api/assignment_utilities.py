@@ -297,8 +297,8 @@ def call_responder(server, endpoint, payload=''):
     if req.status_code == 200:
         return req.json()
     print("Could not get response from %s: %s" % (url, req.text))
-    raise InvalidUsage("Could not get response from %s: %s" % (url, req.text))
-    # raise InvalidUsage(req.text, req.status_code)
+    #raise InvalidUsage("Could not get response from %s: %s" % (url, req.text))
+    raise InvalidUsage(req.text, req.status_code)
 
 
 def neuprint_custom_query(payload):

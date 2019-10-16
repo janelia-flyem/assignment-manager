@@ -115,7 +115,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.1'
+__version__ = '0.11.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1647,10 +1647,31 @@ def user_list():
         link = '<a href="/user/%s">%s</a>' % (row['name'], row['name'])
         ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
                       row['email'], row['organization'], row['permissions']])
+    adduser = ''
+    if check_permission(user, 'admin'):
+        adduser = '''
+        <br>
+        <h3>Add a user</h3>
+        <div class="form-group">
+          <div class="col-md-3">
+            <label for="Input1">User name</label>
+            <input type="text" class="form-control" id="user_name" aria-describedby="usernameHelp" placeholder="Enter user name">
+            <small id="usernameHelp" class="form-text text-muted">This is the NeuPrint user name (Google email address).</small>
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="col-md-3">
+            <label for="Input2">Janelia ID</label>
+            <input type="text" class="form-control" id="janelia_id" aria-describedby="jidHelp" placeholder="Enter Janelia ID">
+            <small id="jidHelp" class="form-text text-muted">Enter the Janelia user ID.</small>
+          </div>
+        </div>
+        <button type="submit" id="sb" class="btn btn-primary" onclick="add_user();" href="#">Add user</button>
+        '''
     navbar = generate_navbar('Users')
     return render_template('userlist.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], user=user, navbar=navbar,
-                           users=ulist)
+                           users=ulist, adduser=adduser)
 
 
 @app.route('/userlist/<string:protocol>')
@@ -4377,7 +4398,10 @@ def add_user(): # pragma: no cover
     check_missing_parms(ipd, ['name', 'janelia_id'])
     if not check_permission(result['rest']['user'], 'admin'):
         raise InvalidUsage("You don't have permission to add a user")
-    data = call_responder('config', 'config/workday/' + ipd['janelia_id'])
+    try:
+        data = call_responder('config', 'config/workday/' + ipd['janelia_id'])
+    except Exception as err:
+        raise err
     if not data:
         raise InvalidUsage('User %s not found in Workday' % (ipd['name']))
     work = data['config']
@@ -4394,6 +4418,7 @@ def add_user(): # pragma: no cover
     result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_USER'], bind)
     if 'permissions' in ipd and type(ipd['permissions']).__name__ == 'list':
         add_user_permissions(result, ipd['name'], ipd['permissions'])
+    print("Added user " + ipd['janelia_id'])
     g.db.commit()
     publish_cdc(result, {"table": "user", "operation": "insert"})
     return generate_response(result)
