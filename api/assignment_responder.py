@@ -118,7 +118,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.3'
+__version__ = '0.11.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1708,18 +1708,23 @@ def user_protocol_list(protocol):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    ulist = []
+    urows = ''
+    template = '<tr class="%s">' + ''.join("<td>%s</td>")*4 \
+               + ''.join('<td style="text-align: center">%s</td>')*1 + "</tr>"
+    organizations = dict()
     for row in rows:
+        rclass = re.sub('[^0-9a-zA-Z]+', '_', row['organization'])
         link = '<a href="/user/%s">%s</a>' % (row['name'], row['name'])
         val = 'checked="checked"' if row['permissions'] and protocol in row['permissions'] else ''
         check = '<input type="checkbox" %s id="%s" onchange="changebox(this,%s);">' \
                  % (val, row['name'], "'" + protocol + "'")
-        ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
-                      row['organization'], check])
+        organizations[rclass] = row['organization']
+        urows += template % (rclass, ', '.join([row['last'], row['first']]), link,
+                             row['janelia_id'], row['organization'], check)
     navbar = generate_navbar('Protocols')
     return render_template('userplist.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar,
-                           protocol=protocol, users=ulist)
+                           protocol=protocol, organizations=organizations, userrows=urows)
 
 
 @app.route('/user/<string:uname>')

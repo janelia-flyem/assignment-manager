@@ -4,7 +4,21 @@
 {% endblock %}
 {% block script %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 <script>
+function select_organization(sel) {
+  selected = sel.value
+  console.log($('#organization').val());
+  $("#organization > option").each(function() {
+    if ($('#organization').val().includes(this.value)) {
+      $("."+this.value).show();
+    }
+    else {
+      $("."+this.value).hide();
+    }
+  });
+}
+
 function changebox(cb,permission) {
   user = cb.id; 
   if (cb.checked == true) {
@@ -37,10 +51,12 @@ function changebox(cb,permission) {
       } 
   }); 
 } 
+$('select').selectpicker();
 </script>
 {% endblock %}
 {% block css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/css/bootstrap-select.css" />
 {% endblock %}
 {% block onload %}
 onload="tableInitialize();"
@@ -49,14 +65,18 @@ onload="tableInitialize();"
 {% block content %}
   {{navbar|safe}}
   <h2>{{protocol}}</h2>
+  Select organization:
+  <select id="organization" class="selectpicker" multiple=1 data-live-search="true" onchange='select_organization(this);'>
+    {% for org in organizations %}
+        <option value="{{org}}" SELECTED>{{organizations[org]}}</option>"
+    {% endfor %}
+  </select>
   <table id="users" class="tablesorter standard">
   <thead>
     <tr><th>User</th><th>Name</th><th>Janelia ID</th><th>Organization</th><th>Permission</th></tr>
   </thead>
   <tbody>
-  {% for row in users %}
-    <tr><td>{{row[0]}}</td><td>{{row[1]|safe}}</td><td>{{row[2]}}</td><td>{{row[3]}}</td><td>{{row[4]|safe}}</td></td></tr>
-  {% endfor %}
+  {{userrows|safe}}
   </tbody>
   </table>
 {% endblock %}

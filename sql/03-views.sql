@@ -152,7 +152,7 @@ SELECT
     a.id                            AS id,
     a.name                          AS name,
     p.name                          AS project,
-    p.protocol                      AS protocol,
+    pp.name                         AS protocol,
     ap.value                        AS note,
     a.disposition                   AS disposition,
     a.user                          AS user,
@@ -162,8 +162,9 @@ SELECT
     SEC_TO_TIME(a.working_duration) AS working_duration,
     a.create_date      AS create_date
 FROM assignment a
-JOIN project_vw p ON (p.id = a.project_id)
+JOIN project p ON (p.id = a.project_id)
 LEFT OUTER JOIN assignment_property_vw ap ON (ap.assignment_id=a.id AND ap.type='note')
+LEFT OUTER JOIN cv_term pp ON (pp.id=p.protocol_id)
 ;
 
 CREATE OR REPLACE VIEW task_property_vw AS
@@ -187,7 +188,7 @@ SELECT
     p.name                          AS project,
     t.project_id                    AS project_id,
     a.name                          AS assignment,
-    p.protocol                      AS protocol,
+    pp.name                         AS protocol,
     p.priority                      AS priority,
     t.assignment_id                 AS assignment_id,
     t.key_type_id                   AS key_type_id,
@@ -203,11 +204,12 @@ SELECT
     SEC_TO_TIME(t.working_duration) AS working_duration,
     t.create_date                   AS create_date
 FROM task t
-JOIN project_vw p ON (p.id = t.project_id)
+JOIN project p ON (p.id = t.project_id)
 LEFT OUTER JOIN assignment a ON (a.id = t.assignment_id)
 JOIN cv_term ktype ON (t.key_type_id = ktype.id)
 JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
 LEFT OUTER JOIN task_property_vw tp ON (tp.task_id=t.id AND tp.type='note')
+LEFT OUTER JOIN cv_term pp ON (pp.id=p.protocol_id)
 ;
 
 CREATE OR REPLACE VIEW cleave_task_vw AS
@@ -230,12 +232,13 @@ SELECT
     t.working_duration AS working_duration,
     t.create_date      AS create_date
 FROM task t
-JOIN project_vw p ON (p.id = t.project_id)
+JOIN project p ON (p.id = t.project_id)
 LEFT OUTER JOIN assignment a ON (a.id = t.assignment_id)
 JOIN cv_term ktype ON (t.key_type_id = ktype.id)
 JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
 LEFT OUTER JOIN task_property_vw tp ON (tp.task_id=t.id AND tp.type='note')
-WHERE p.protocol='cleave'
+LEFT OUTER JOIN cv_term pp ON (pp.id=p.protocol_id)
+WHERE pp.name='cleave'
 ;
 
 CREATE OR REPLACE VIEW connection_validation_task_vw AS
@@ -258,12 +261,13 @@ SELECT
     t.working_duration AS working_duration,
     t.create_date      AS create_date
 FROM task t
-JOIN project_vw p ON (p.id = t.project_id)
+JOIN project p ON (p.id = t.project_id)
 LEFT OUTER JOIN assignment a ON (a.id = t.assignment_id)
 JOIN cv_term ktype ON (t.key_type_id = ktype.id)
 JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
 LEFT OUTER JOIN task_property_vw tp ON (tp.task_id=t.id AND tp.type='note')
-WHERE p.protocol='connection_validation'
+LEFT OUTER JOIN cv_term pp ON (pp.id=p.protocol_id)
+WHERE pp.name='connection_validation'
 ;
 
 CREATE OR REPLACE VIEW orphan_link_task_vw AS
@@ -286,12 +290,13 @@ SELECT
     t.working_duration AS working_duration,
     t.create_date      AS create_date
 FROM task t
-JOIN project_vw p ON (p.id = t.project_id)
+JOIN project p ON (p.id = t.project_id)
 LEFT OUTER JOIN assignment a ON (a.id = t.assignment_id)
 JOIN cv_term ktype ON (t.key_type_id = ktype.id)
 JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
 LEFT OUTER JOIN task_property_vw tp ON (tp.task_id=t.id AND tp.type='note')
-WHERE p.protocol='orphan_link'
+LEFT OUTER JOIN cv_term pp ON (pp.id=p.protocol_id)
+WHERE pp.name='orphan_link'
 ;
 
 CREATE OR REPLACE VIEW todo_task_vw AS
@@ -314,13 +319,14 @@ SELECT
     t.working_duration AS working_duration,
     t.create_date      AS create_date
 FROM task t
-JOIN project_vw p ON (p.id = t.project_id)
+JOIN project p ON (p.id = t.project_id)
 JOIN cv_term ktype ON (t.key_type_id = ktype.id)
 JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
 LEFT OUTER JOIN task_property_vw tp ON (tp.task_id=t.id AND tp.type='note')
 LEFT OUTER JOIN task_property_vw tp2 ON (tp2.task_id=t.id AND tp2.type='todo_type')
 LEFT OUTER JOIN task_property_vw tp3 ON (tp3.task_id=t.id AND tp3.type='priority')
-WHERE p.protocol='todo'
+LEFT OUTER JOIN cv_term pp ON (pp.id=p.protocol_id)
+WHERE pp.name='todo'
 ;
 
 CREATE OR REPLACE VIEW task_audit_vw AS
@@ -377,8 +383,8 @@ SELECT
     GROUP_CONCAT(DISTINCT IFNULL(t.disposition,'NULL')) AS task_disposition,
     COUNT(t.id) AS tasks
 FROM assignment_vw a
-JOIN task_vw t ON (t.assignment=a.name)
+JOIN task t ON (t.assignment_id=a.id)
 JOIN user u ON (a.user=u.name)
-GROUP BY a.user,project,assignment
+GROUP BY a.user,a.project,a.name
 ORDER BY proofreader,project,assignment
 ;
