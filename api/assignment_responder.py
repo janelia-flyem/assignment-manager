@@ -118,7 +118,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.4'
+__version__ = '0.11.5'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1645,13 +1645,18 @@ def user_list():
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    ulist = []
+    urows = ''
+    template = '<tr class="%s">' + ''.join("<td>%s</td>")*6 + "</tr>"
+    organizations = dict()
     for row in rows:
+        rclass = re.sub('[^0-9a-zA-Z]+', '_', row['organization'])
+        organizations[rclass] = row['organization']
         link = '<a href="/user/%s">%s</a>' % (row['name'], row['name'])
         if not row['permissions']:
             row['permissions'] = '-'
-        ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
-                      row['email'], row['organization'], row['permissions']])
+        urows += template % (rclass, ', '.join([row['last'], row['first']]), link,
+                             row['janelia_id'], row['email'], row['organization'],
+                             row['permissions'])
     adduser = ''
     if check_permission(user, 'admin'):
         adduser = '''
@@ -1676,7 +1681,7 @@ def user_list():
     navbar = generate_navbar('Users')
     return render_template('userlist.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], user=user, navbar=navbar,
-                           users=ulist, adduser=adduser)
+                           organizations=organizations, userrows=urows, adduser=adduser)
 
 
 @app.route('/userlist/<string:protocol>')

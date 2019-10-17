@@ -8,7 +8,6 @@
 <script>
 function select_organization(sel) {
   selected = sel.value
-  console.log($('#organization').val());
   $("#organization > option").each(function() {
     if ($('#organization').val().includes(this.value)) {
       $("."+this.value).show();
