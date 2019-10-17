@@ -37,6 +37,7 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv (version,is_current,name,display_name,definition) VALUES (1,1,'key','Key','Key');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('key',''),1,'body_id','Body ID','Body ID');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('key',''),1,'xyz','XYZ coords','XYZ coordinates');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('key',''),1,'body_xyz','Body/XYZ coords','Body/XYZ coordinates');
 
 # INSERT INTO cv_term_relationship (is_current,type_id,subject_id,object_id) VALUES (1,getCvTermId('schema','associated_with',NULL),getCvTermId('protocol','orphan_link',NULL),getCvTermId('key','body_id',NULL));
 

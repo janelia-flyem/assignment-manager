@@ -72,7 +72,8 @@ READ = {
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
     'TASKS': "SELECT id,project,assignment,protocol,priority,start_date,completion_date,"
              + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE user=%s "
-             + "AND assignment IS NOT NULL ORDER BY start_date,priority,protocol",
+             + "AND assignment IS NOT NULL "
+             + "ORDER BY start_date,priority,protocol,project,assignment",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
                         + "assignment_id IS NULL ORDER BY id",
@@ -118,7 +119,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.5'
+__version__ = '0.11.6'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1162,6 +1163,32 @@ def build_assignment_table(user, ipd): # pylint: disable=R0914
     return proofreaders, assignments
 
 
+def create_assignment_from_tasks(project, assignment_name, ipd, result):
+    ''' Coreat an assignment from a list of tasks
+        Keyword arguments:
+          project: project instance
+          assignment_name: assignment
+          ipd: request payload
+          result: result dictionary
+    '''
+    try:
+        bind = (assignment_name, project['id'], select_user(project, ipd, result))
+        g.c.execute(WRITE['INSERT_ASSIGNMENT'], bind)
+        result['rest']['row_count'] += g.c.rowcount
+        result['rest']['inserted_id'] = assignment_id = g.c.lastrowid
+        result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_ASSIGNMENT'], bind)
+        publish_cdc(result, {"table": "assignment", "operation": "insert"})
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    insert_list = [(assignment_id, result['tasks'][i]['id']) for i in result['tasks']]
+    sql = "UPDATE task SET assignment_id=%s WHERE id=%s"
+    try:
+        g.c.executemany(sql, insert_list)
+        result['rest']['row_count'] += g.c.rowcount
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+
+
 def get_task_by_key(pid, key_type, key):
     ''' Get a task by project ID/key type/key
         Keyword arguments:
@@ -1212,6 +1239,8 @@ def parse_tasks(ipd):
         ipd['tasks'] = dict()
         for pnt in ipd['points']:
             name = '_'.join([str(i) for i in pnt])
+            if 'body_id' in ipd:
+                name = '_'.join([str(ipd['body_id']), name])
             ipd['tasks'][name] = {}
     return None
 
@@ -3894,7 +3923,9 @@ def delete_assignment(assignment_id):
 # * Task endpoints                                                            *
 # *****************************************************************************
 @app.route('/tasks/<string:protocol>/<string:project_name>', methods=['OPTIONS', 'POST'])
-def new_tasks_for_project(protocol, project_name):
+@app.route('/tasks/<string:protocol>/<string:project_name>/<string:assignment_name>',
+           methods=['OPTIONS', 'POST'])
+def new_tasks_for_project(protocol, project_name, assignment_name=None):
     '''
     Generate one or more new tasks for a new or existing project
     Given a JSON payload containing specifics, generate new tasks for a
@@ -3981,6 +4012,7 @@ def new_tasks_for_project(protocol, project_name):
         insert_project(ipd, result)
         project = dict()
         project['id'] = result['rest']['inserted_id']
+        project['protocol'] = protocol
     if 'tasks' not in ipd:
         raise InvalidUsage("No tasks found in JSON payload")
     constructor = globals()[protocol.capitalize()]
@@ -3997,6 +4029,9 @@ def new_tasks_for_project(protocol, project_name):
     # Create the tasks
     create_tasks_from_json(ipd, project['id'], projectins.unit,
                            projectins.task_insert_props, result)
+    # Are these tasks part of an assignment?
+    if assignment_name:
+        create_assignment_from_tasks(project, assignment_name, ipd, result)
     g.db.commit()
     return generate_response(result)
 

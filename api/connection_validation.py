@@ -13,7 +13,7 @@ class Connection_validation:
         '''
         self.num_tasks = 100
         self.task_populate_method = 'json_upload'
-        self.unit = 'xyz'
+        self.unit = 'body_xyz'
         self.optional_properties = ['note', 'group', 'source']
         self.allowable_filters = []
         # self.no_assignment = True
