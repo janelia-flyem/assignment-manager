@@ -47,6 +47,9 @@ READ = {
     'CVTERMREL': "SELECT subject,relationship,object FROM "
                  + "cv_term_relationship_vw WHERE subject_id=%s OR "
                  + "object_id=%s",
+    'ELIGIBLE_CONNECTION_VALIDATION': "SELECT * from connection_validation_task_vw WHERE "
+                                      + "assignment_id IS NOT NULL AND start_date IS NULL "
+                                      + "ORDER BY project,create_date",
     'ELIGIBLE_CLEAVE': "SELECT * from cleave_task_vw WHERE assignment_id IS NOT NULL "
                        + "AND start_date IS NULL ORDER BY project,create_date",
     'ELIGIBLE_ORPHAN_LINK': "SELECT * from orphan_link_task_vw WHERE assignment_id IS NOT NULL "
@@ -115,7 +118,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.2'
+__version__ = '0.11.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1645,6 +1648,8 @@ def user_list():
     ulist = []
     for row in rows:
         link = '<a href="/user/%s">%s</a>' % (row['name'], row['name'])
+        if not row['permissions']:
+            row['permissions'] = '-'
         ulist.append([', '.join([row['last'], row['first']]), link, row['janelia_id'],
                       row['email'], row['organization'], row['permissions']])
     adduser = ''
@@ -1782,6 +1787,7 @@ def download(fname):
                                title='Download error', message=err)
 
 
+@app.route('/')
 @app.route('/projectlist', methods=['GET', 'POST'])
 def show_projects(): # pylint: disable=R0914
     ''' Projects
@@ -1853,7 +1859,6 @@ def show_projects(): # pylint: disable=R0914
                            newproject=newproject, protocols=protocols, projects=projects)
 
 
-@app.route('/')
 @app.route('/assignmentlist', methods=['GET', 'POST'])
 def show_assignments(): # pylint: disable=R0914
     ''' Default route
