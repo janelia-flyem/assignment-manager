@@ -15,6 +15,32 @@ function show_all() {
   $('#proofreader').val('all');
 }
 
+function reassign(assn) {
+  url = '/assignment/' + assn + '/reassign';
+  token = $.cookie('assignment-manager-token')
+  $.ajax({
+      url: url,
+      headers: {"Authorization": 'Bearer ' + token },
+      type: 'POST',
+      dataType: 'json',
+      data: JSON.stringify({"user": $('#proofreader').val()}),
+      contentType:'application/json',
+      success: function(result) {
+        alert("The assignment has been reassigned to " + $('#proofreader').val());
+        window.location.href = '/'
+      },
+      error: function (xhr, ajaxOptions, thrownError) {
+        if (xhr.status == 401) {
+          alert("You are not authenticated");
+        }
+        else {
+          json = JSON.parse(xhr.responseText);
+          alert(json['rest']['error']);
+        }
+      }
+  });
+}
+
 function modify_assignment(assn,operation) {
   url = '/assignment/' + assn
   if (operation == 'deleted') {
@@ -45,7 +71,8 @@ function modify_assignment(assn,operation) {
           alert("You are not authenticated");
         }
         else {
-          alert(xhr.status + ': ' + thrownError);
+          json = JSON.parse(xhr.responseText);
+          alert(json['rest']['error']);
         }
       }
   });

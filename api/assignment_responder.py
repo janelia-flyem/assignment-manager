@@ -119,7 +119,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.8'
+__version__ = '0.11.9'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2157,6 +2157,23 @@ def show_assignment(aname):
         <button type="button" class="btn btn-danger btn-sm" onclick='modify_assignment(%s,"deleted");'>Remove unstarted tasks</button>
         '''
         controls = controls % (assignment['id'])
+        try:
+            g.c.execute("SELECT uv.name,CONCAT(last,', ',first)AS proofreader FROM user_vw uv "
+                        + "JOIN user_permission_vw upv ON (uv.name=upv.name) "
+                        + "WHERE permission=%s ORDER BY janelia_id", assignment['protocol'])
+            rows = g.c.fetchall()
+        except Exception as err:
+            return render_template('error.html', urlroot=request.url_root,
+                                   title='SQL error', message=sql_error(err))
+        controls += '''
+        <button style="margin-left:20px" type="button" class="btn btn-warning btn-sm" onclick='reassign(%s);'>Reassign to</button>
+        <select id="proofreader">
+        '''
+        controls = controls % (assignment['id'])
+        for row in rows:
+            controls += '<option value="%s">%s</option>' \
+                % (row['name'], row['proofreader'])
+        controls += '</select>'
     navbar = generate_navbar('Assignments')
     return render_template('assignment.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, assignment=aname,
@@ -3870,6 +3887,48 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
     remove_id_from_index(assignment_id, 'assignment_start-*', result)
     remove_id_from_index(assignment_id, 'assignment_complete-*', result)
     result['rest']['row_count'] = g.c.rowcount
+    g.db.commit()
+    return generate_response(result)
+
+
+@app.route('/assignment/<string:assignment_id>/reassign', methods=['OPTIONS', 'POST'])
+def reassign_assignment_by_id(assignment_id): # pragma: no cover
+    '''
+    Start an assignment
+    ---
+    tags:
+      - Assignment
+    parameters:
+      - in: path
+        name: assignment_id
+        schema:
+          type: string
+        required: true
+        description: assignment ID
+      - in: query
+        name: user
+        schema:
+          type: string
+        required: true
+        description: user
+    responses:
+      200:
+          description: Assignment reassigned
+      400:
+          description: Assignment not reassigned
+    '''
+    result = initialize_result()
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to reassign")
+    ipd = receive_payload(result)
+    try:
+        stmt = "UPDATE assignment SET user=%s WHERE id=%s"
+        bind = (ipd['user'], assignment_id)
+        g.c.execute(stmt, bind)
+        result['rest']['row_count'] += g.c.rowcount
+        result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
     g.db.commit()
     return generate_response(result)
 
