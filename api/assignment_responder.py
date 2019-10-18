@@ -119,7 +119,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.6'
+__version__ = '0.11.7'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1232,6 +1232,9 @@ def parse_tasks(ipd):
         if not isinstance(ipd['tasks'], (dict)):
             return "tasks payload must be a JSON dictionary"
     elif 'points' in ipd:
+        if ipd['protocol'] == 'connection_validation':
+            if 'body_id' not in ipd:
+                return "connection_validation protocol requires a body_id"
         if not isinstance(ipd['points'], (list)):
             return "points payload must be an array of arrays"
         if 'source' not in ipd and 'software' in ipd and ipd['software']:

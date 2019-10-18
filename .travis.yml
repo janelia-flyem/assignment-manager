@@ -12,3 +12,4 @@ script:
   - pylint assignment_responder.py
   - pylint assignment_utilities.py
   - pylint ../utilities/add_users.py
+  - pylint ../utilities/upload_json.py

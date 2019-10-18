@@ -144,39 +144,39 @@ def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, result)
     result['rest']['tasks_inserted'] = len(insert_list)
     # Select tasks to get IDs and build list of properties to insert
     result['tasks'] = dict()
-    insert_list = []
+    insertprop_list = []
     try:
-        g.c.execute("SELECT id,key_text FROM task WHERE project_id=%s", (project_id))
+        g.c.execute("SELECT * FROM task WHERE project_id=%s", (project_id))
         existing = g.c.fetchall()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
+    audit_list = []
     for etask in existing:
         key = etask['key_text']
         if key not in ipd['tasks']:
             continue
         result['tasks'].update({key: {"id": etask['id']}})
+        bind = (etask['id'], etask['project_id'], etask['assignment_id'], key_type,
+                etask['key_text'], 'Created', etask['user'])
+        audit_list.append(bind)
         # Task properties
         for parm in task_insert_props:
             if parm in ipd['tasks'][key]:
                 bind = (etask['id'], parm, ipd['tasks'][key][parm], ipd['tasks'][key][parm])
-                insert_list.append(bind)
+                insertprop_list.append(bind)
                 result['tasks'][key][parm] = ipd['tasks'][key][parm]
-    if insert_list:
-        print("Task properties to insert: %s" % len(insert_list))
+    if insertprop_list:
+        print("Task properties to insert: %s" % len(insertprop_list))
         try:
-            g.c.executemany(WRITE['TASK_PROP'], insert_list)
+            g.c.executemany(WRITE['TASK_PROP'], insertprop_list)
             result['rest']['row_count'] += g.c.rowcount
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
     # Update task_audit
-    insert_list = []
-    for key in result['tasks']:
-        bind = (project_id, None, key_type,
-                key, 'Inserted', result['rest']['user'])
-        insert_list.append(bind)
-    #if insert_list:
-        #try:
-        #    g.c.executemany(WRITE['TASK_AUDIT'], insert_list)
-        #    result['rest']['row_count'] += g.c.rowcount
-        #except Exception as err:
-        #    raise InvalidUsage(sql_error(err), 500)
+    audit_list = [] #PLUG
+    if audit_list:
+        try:
+            g.c.executemany(WRITE['TASK_AUDIT'], audit_list)
+            result['rest']['row_count'] += g.c.rowcount
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
