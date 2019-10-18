@@ -63,9 +63,9 @@ def process_file(file):
         sys.exit(-1)
     response = call_responder('assignment-manager', endpoint, content)
     if response['rest']['error']:
-    	LOGGER.critical(response['rest']['error'])
+        LOGGER.critical(response['rest']['error'])
     else:
-    	LOGGER.info("Tasks inserted: %s", response['rest']['tasks_inserted'])
+        LOGGER.info("Tasks inserted: %s", response['rest']['tasks_inserted'])
 
 
 # -----------------------------------------------------------------------------
