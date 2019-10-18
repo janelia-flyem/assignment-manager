@@ -119,7 +119,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.7'
+__version__ = '0.11.8'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -941,7 +941,10 @@ def generate_assignment(ipd, result):
     # Find the project
     project = get_project_by_name_or_id(ipd['project_name'])
     check_project(project, ipd)
-    assignment_user = select_user(project, ipd, result)
+    try:
+        assignment_user = select_user(project, ipd, result)
+    except Exception as err:
+        raise err
     ipd['project_name'] = project['name']
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
@@ -1172,7 +1175,11 @@ def create_assignment_from_tasks(project, assignment_name, ipd, result):
           result: result dictionary
     '''
     try:
-        bind = (assignment_name, project['id'], select_user(project, ipd, result))
+        this_user = select_user(project, ipd, result)
+    except Exception as err:
+        raise err
+    bind = (assignment_name, project['id'], this_user)
+    try:
         g.c.execute(WRITE['INSERT_ASSIGNMENT'], bind)
         result['rest']['row_count'] += g.c.rowcount
         result['rest']['inserted_id'] = assignment_id = g.c.lastrowid

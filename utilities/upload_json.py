@@ -5,8 +5,8 @@ import argparse
 import sys
 import json
 import os
-import colorlog
 import requests
+import colorlog
 
 # Configuration
 CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
@@ -51,18 +51,21 @@ def process_file(file):
         with open(file, 'r') as content_file:
             content = content_file.read()
     except IOError:
-        LOGGER.error("Could not read file %s", file)
+        LOGGER.critical("Could not read file %s", file)
         sys.exit(-1)
     assignment = os.path.splitext(file)
     endpoint = '/'.join(['tasks', ARGS.protocol, ARGS.project, assignment[0]])
-    #CONFIG['flyem-assignment-manager'] = {"url": "http://svirskasr-wm2.janelia.org/"} #PLUG
+    #CONFIG['assignment-manager'] = {"url": "http://svirskasr-wm2.janelia.org/"} #PLUG
     try:
         content = json.loads(content)
     except ValueError:
         LOGGER.critical('File contains invalid JSON')
         sys.exit(-1)
     response = call_responder('assignment-manager', endpoint, content)
-    print(response)
+    if response['rest']['error']:
+    	LOGGER.critical(response['rest']['error'])
+    else:
+    	LOGGER.info("Tasks inserted: %s", response['rest']['tasks_inserted'])
 
 
 # -----------------------------------------------------------------------------
