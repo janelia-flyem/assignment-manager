@@ -3918,9 +3918,19 @@ def reassign_assignment_by_id(assignment_id): # pragma: no cover
           description: Assignment not reassigned
     '''
     result = initialize_result()
-    if not check_permission(result['rest']['user'], 'admin'):
-        raise InvalidUsage("You don't have permission to reassign")
     ipd = receive_payload(result)
+    if 'user' not in ipd:
+        raise InvalidUsage("You must specify a user to reassign to")
+    try:
+        g.c.execute("SELECT project_id FROM assignment WHERE id=%s", assignment_id)
+        pid = g.c.fetchone()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    project = get_project_by_name_or_id(pid['project_id'])
+    try:
+        ipd['assignto'] = select_user(project, ipd, result)
+    except Exception as err:
+        raise err
     try:
         stmt = "UPDATE assignment SET user=%s WHERE id=%s"
         bind = (ipd['user'], assignment_id)
