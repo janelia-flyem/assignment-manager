@@ -1,3 +1,6 @@
+''' Populate the user table with users
+'''
+
 import requests
 
 USERS = {"alvaradoc": "alvaradocx4",
@@ -41,9 +44,14 @@ USERS = {"alvaradoc": "alvaradocx4",
          "yangt": "tansygarvey",
          "zhaot": "tingzhao"
         }
-BEARER = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJvYnN2aUBnbWFpbC5jb20iLCJsZXZlbCI6Im5vYXV0aCIsImltYWdlLXVybCI6Imh0dHBzOi8vbGgzLmdvb2dsZXVzZXJjb250ZW50LmNvbS9hLS9BQXVFN21CSW5mWGE2dVBuMnV5VG5vN3FBdThzdEZMMWtPdjR3Yk0zemJvWEpRP3N6PTUwIiwiZXhwIjoxNzQ3NjE5MDM3fQ.Ycu57B6qJKUtEiphhBf48AvfiWTnOFrmhLkRLeppP1c'
 
 def call_responder(url, endpoint, payload=''):
+    ''' Call a responder
+        Keyword arguments:
+          url: URL
+          endpoint: REST endpoint
+          payload: payload for POST requests
+    '''
     url += endpoint
     try:
         if payload:
@@ -56,14 +64,15 @@ def call_responder(url, endpoint, payload=''):
         print(err)
         raise err
     if req.status_code == 200:
-        return req.json()
+        return
     if 'is already' in req.text:
         print(req.json()['rest']['error'])
     else:
         print(req.text)
+    return
 
-
+BEARER = input("Bearer token: ")
 for user in USERS:
-    payload = {"janelia_id": user,
-               "name": USERS[user] + '@gmail.com'}
-    response = call_responder('http://flyem-assignment.int.janelia.org/', 'adduser', payload)
+    record = {"janelia_id": user,
+              "name": USERS[user] + '@gmail.com'}
+    call_responder('http://flyem-assignment.int.janelia.org/', 'adduser', record)
