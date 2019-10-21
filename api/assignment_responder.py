@@ -254,6 +254,7 @@ def initialize_result():
         raise InvalidUsage('You must authorize to use this endpoint', 401)
     if app.config['LAST_TRANSACTION'] and time() - app.config['LAST_TRANSACTION'] \
        >= app.config['RECONNECT_SECONDS']:
+        print("Seconds since last transaction: %d" % (time() - app.config['LAST_TRANSACTION']))
         g.db.ping()
     app.config['LAST_TRANSACTION'] = time()
     return result
