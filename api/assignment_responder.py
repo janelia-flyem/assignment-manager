@@ -119,7 +119,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.10'
+__version__ = '0.12'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1210,6 +1210,8 @@ def create_assignment_from_tasks(project, assignment_name, ipd, result):
           assignment_name: assignment
           ipd: request payload
           result: result dictionary
+        Returns:
+          assignment ID
     '''
     try:
         this_user = select_user(project, ipd, result)
@@ -1224,6 +1226,7 @@ def create_assignment_from_tasks(project, assignment_name, ipd, result):
         publish_cdc(result, {"table": "assignment", "operation": "insert"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
+    return assignment_id
     insert_list = [(assignment_id, result['tasks'][i]['id']) for i in result['tasks']]
     sql = "UPDATE task SET assignment_id=%s WHERE id=%s"
     try:
@@ -4150,6 +4153,8 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
     error = parse_tasks(ipd)
     if error:
         raise InvalidUsage(error)
+    if 'tasks' not in ipd:
+        raise InvalidUsage("No tasks found in JSON payload")
     if project:
         if project['protocol'] != protocol:
             raise InvalidUsage("Additional tasks for an existing project " \
@@ -4161,8 +4166,6 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
         project = dict()
         project['id'] = result['rest']['inserted_id']
         project['protocol'] = protocol
-    if 'tasks' not in ipd:
-        raise InvalidUsage("No tasks found in JSON payload")
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
     if hasattr(projectins, 'validate_tasks'):
@@ -4174,12 +4177,13 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
         if parm in ipd:
             update_property(project['id'], 'project', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
+    # Are these tasks part of an assignment?
+    assignment_id = None
+    if assignment_name:
+        assignment_id = create_assignment_from_tasks(project, assignment_name, ipd, result)
     # Create the tasks
     create_tasks_from_json(ipd, project['id'], projectins.unit,
-                           projectins.task_insert_props, result)
-    # Are these tasks part of an assignment?
-    if assignment_name:
-        create_assignment_from_tasks(project, assignment_name, ipd, result)
+                           projectins.task_insert_props, assignment_id, result)
     g.db.commit()
     return generate_response(result)
 
