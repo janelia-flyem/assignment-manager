@@ -73,7 +73,7 @@ READ = {
     'TASKS': "SELECT id,project,assignment,protocol,priority,start_date,completion_date,"
              + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE user=%s "
              + "AND assignment IS NOT NULL "
-             + "ORDER BY start_date,priority,protocol,project,assignment",
+             + "ORDER BY start_date,priority,protocol,project,assignment,id",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
                         + "assignment_id IS NULL ORDER BY id",
@@ -119,7 +119,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.11.9'
+__version__ = '0.11.10'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -786,6 +786,42 @@ def select_user(project, ipd, result):
     return assignment_user
 
 
+def get_assignment_controls(assignment, num_tasks, tasks_started, user, user_rows):
+    ''' Generate controls for assignment web page
+        Keyword arguments:
+          assignment: assignment instance
+          num_tasks: number of tasks
+          tasks_started: number of started tasks
+          user: calling user
+          user_rows: users to reassign to
+        Returns:
+          HTML controls
+    '''
+    controls = ''
+    if not tasks_started and check_permission(user, 'admin'):
+        if assignment['start_date']:
+            controls += '''
+            <button type="button" class="btn btn-warning btn-sm" onclick='modify_assignment(%s,"reset");'>Reset assignment</button>
+            '''
+            controls = controls % (assignment['id'])
+    if num_tasks > tasks_started and check_permission(user, 'admin'):
+        controls += '''
+        <button type="button" class="btn btn-danger btn-sm" onclick='modify_assignment(%s,"deleted");'>Remove unstarted tasks</button>
+        '''
+        controls = controls % (assignment['id'])
+        controls += '''
+        <button style="margin-left:20px" type="button" class="btn btn-warning btn-sm" onclick='reassign(%s);'>Reassign to</button>
+        <select id="proofreader">
+        '''
+        controls = controls % (assignment['id'])
+        for row in user_rows:
+            if row['name'] != assignment['user']:
+                controls += '<option value="%s">%s</option>' \
+                    % (row['name'], row['proofreader'])
+        controls += '</select>'
+    return controls
+
+
 def build_protocols_table(calling_user, user):
     ''' Generate a user protocol table.
         Keyword arguments:
@@ -1433,6 +1469,42 @@ def build_task_table(aname):
     return tasks, num_tasks, tasks_started
 
 
+def get_task_controls(user, task_id, task):
+    ''' Generate controls for task web page
+        Keyword arguments:
+          user: calling user
+          task_id: task ID
+          task: task instance
+        Returns:
+          HTML controls
+    '''
+    if not check_permission(user, 'admin'):
+        return ''
+    controls = '<br>'
+    if not task['start_date']:
+        controls += '''
+        <button type="button" class="btn btn-warning btn-sm" onclick='modify_task(%s,"start");'>Start task</button>
+        '''
+        controls = controls % (task_id)
+    else:
+        if not task['completion_date']:
+            controls += '''
+            <button type="button" class="btn btn-warning btn-sm" style="margin-right:20px" onclick='modify_task(%s,"complete");'>Complete task</button>
+            '''
+            controls = controls % (task_id)
+            try:
+                g.c.execute("SELECT cv_term FROM cv_term_vw WHERE cv='disposition'")
+                rows = g.c.fetchall()
+            except Exception as err:
+                raise err
+            controls += 'Disposition: <select id="disposition" style="margin-right: 20px">'
+            for row in rows:
+                if row['cv_term'] not in ['In progress']:
+                    controls += '<option>%s</option>' % (row['cv_term'])
+            controls += '</select>Note: <input id="note" size=40>'
+    return controls
+
+
 def get_user_id(user):
     ''' Get a user's ID from the "user" table
         Keyword arguments:
@@ -1637,6 +1709,7 @@ def handle_invalid_usage(error):
     response = jsonify(error.to_dict())
     response.status_code = error.status_code
     return response
+
 
 # *****************************************************************************
 # * Web content                                                               *
@@ -2146,35 +2219,15 @@ def show_assignment(aname):
                                    % (assignment[prop], assignment[prop])
             aprops.append([show, assignment[prop]])
     tasks, num_tasks, tasks_started = build_task_table(aname)
-    controls = ''
-    if not tasks_started and check_permission(user, 'admin'):
-        if assignment['start_date']:
-            controls += '''
-            <button type="button" class="btn btn-warning btn-sm" onclick='modify_assignment(%s,"reset");'>Reset assignment</button>
-            '''
-            controls = controls % (assignment['id'])
-    if num_tasks > tasks_started and check_permission(user, 'admin'):
-        controls += '''
-        <button type="button" class="btn btn-danger btn-sm" onclick='modify_assignment(%s,"deleted");'>Remove unstarted tasks</button>
-        '''
-        controls = controls % (assignment['id'])
-        try:
-            g.c.execute("SELECT uv.name,CONCAT(last,', ',first)AS proofreader FROM user_vw uv "
-                        + "JOIN user_permission_vw upv ON (uv.name=upv.name) "
-                        + "WHERE permission=%s ORDER BY janelia_id", assignment['protocol'])
-            rows = g.c.fetchall()
-        except Exception as err:
-            return render_template('error.html', urlroot=request.url_root,
-                                   title='SQL error', message=sql_error(err))
-        controls += '''
-        <button style="margin-left:20px" type="button" class="btn btn-warning btn-sm" onclick='reassign(%s);'>Reassign to</button>
-        <select id="proofreader">
-        '''
-        controls = controls % (assignment['id'])
-        for row in rows:
-            controls += '<option value="%s">%s</option>' \
-                % (row['name'], row['proofreader'])
-        controls += '</select>'
+    try:
+        g.c.execute("SELECT uv.name,CONCAT(last,', ',first)AS proofreader FROM user_vw uv "
+                    + "JOIN user_permission_vw upv ON (uv.name=upv.name) "
+                    + "WHERE permission=%s ORDER BY janelia_id", assignment['protocol'])
+        user_rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    controls = get_assignment_controls(assignment, num_tasks, tasks_started, user, user_rows)
     navbar = generate_navbar('Assignments')
     return render_template('assignment.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, assignment=aname,
@@ -2185,6 +2238,7 @@ def show_assignment(aname):
 def show_task(task_id):
     ''' Show information for a task
     '''
+    # pylint: disable=R0911
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
         return redirect("https://emdata1.int.janelia.org:15000/login?"
                         + "redirect=" + request.url_root)
@@ -2222,6 +2276,13 @@ def show_task(task_id):
             continue
         show = prop['type'].replace('_', ' ').capitalize() + ':'
         tprops.append([show, prop['value']])
+    # Controls
+    try:
+        controls = get_task_controls(user, task_id, task)
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    # Audit table
     try:
         g.c.execute("SELECT disposition,user,create_date  FROM task_audit_vw WHERE "
                     + "task_id=%s ORDER BY 3" % (task_id))
@@ -2235,7 +2296,7 @@ def show_task(task_id):
     navbar = generate_navbar('Tasks')
     return render_template('task.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, task=task_id,
-                           tprops=tprops, audit=audit)
+                           tprops=tprops, controls=controls, audit=audit)
 
 
 @app.route('/newproject/<string:protocol>')
@@ -3940,6 +4001,13 @@ def reassign_assignment_by_id(assignment_id): # pragma: no cover
         result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
+    try:
+        stmt = "UPDATE task SET user=%s WHERE assignment_id=%s"
+        bind = (ipd['user'], assignment_id)
+        g.c.execute(stmt, bind)
+        result['rest']['row_count'] += g.c.rowcount
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
     g.db.commit()
     return generate_response(result)
 
@@ -4345,6 +4413,12 @@ def complete_task_by_id(task_id): # pragma: no cover
           type: string
         required: true
         description: task ID
+      - in: query
+        name: disposition
+        schema:
+          type: string
+        required: false
+        description: disposition [Complete]
       - in: query
         name: note
         schema:

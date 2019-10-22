@@ -2,6 +2,51 @@
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="#">Project</a></li>
 {% endblock %}
+{% block script %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
+<script>
+function modify_task(tid,operation) {
+  url = '/task/' + tid
+  if (operation == 'start') {
+    url = url + '/start';
+  }
+  else {
+    url = url + '/complete';
+  }
+  token = $.cookie('assignment-manager-token')
+  array = {"disposition" : $('#disposition').val()};
+  if ($('#note').val()) {
+    array['note'] = $('#note').val();
+  }
+  $.ajax({
+      url: url,
+      headers: {"Authorization": 'Bearer ' + token },
+      type: 'POST',
+      dataType: 'json',
+      data: JSON.stringify(array),
+      contentType:'application/json',
+      success: function(result) {
+        if (operation == 'start') {
+          alert("This task has been started");
+        }
+        else {
+          alert("This task has been completed");
+        }
+        window.location.href = '/task/' + tid
+      },
+      error: function (xhr, ajaxOptions, thrownError) {
+        if (xhr.status == 401) {
+          alert("You are not authenticated");
+        }
+        else {
+          json = JSON.parse(xhr.responseText);
+          alert(json['rest']['error']);
+        }
+      }
+  });
+}
+</script>
+{% endblock %}
 {% block css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
 {% endblock %}
@@ -19,7 +64,8 @@ onload="tableInitialize();"
   {% endfor %}
   </tbody>
   </table>
-  <br>
+  {{controls|safe}}
+  <br><br>
   <h3>Audit trail</h3>
   <table id='taskaudit' class="tablesorter standard">
   <thead>
