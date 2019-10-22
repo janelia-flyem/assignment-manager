@@ -1227,13 +1227,6 @@ def create_assignment_from_tasks(project, assignment_name, ipd, result):
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     return assignment_id
-    insert_list = [(assignment_id, result['tasks'][i]['id']) for i in result['tasks']]
-    sql = "UPDATE task SET assignment_id=%s WHERE id=%s"
-    try:
-        g.c.executemany(sql, insert_list)
-        result['rest']['row_count'] += g.c.rowcount
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
 
 
 def get_task_by_key(pid, key_type, key):
