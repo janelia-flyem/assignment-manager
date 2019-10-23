@@ -100,8 +100,10 @@ WRITE = {
     'START_TASK': "UPDATE task SET start_date=NOW(),disposition=%s,user=%s WHERE id=%s "
                   + "AND start_date IS NULL",
     'TASK_AUDIT': "INSERT INTO task_audit (task_id,project_id,assignment_id,key_type_id,key_text,"
-                  + "disposition,user) VALUES (%s,%s,%s,getCvTermId('key',%s,NULL),%s,%s,%s)",
+                  + "disposition,note,user) VALUES (%s,%s,%s,getCvTermId('key',%s,NULL),"
+                  + "%s,%s,%s,%s)",
 }
+
 
 # pylint: disable=C0302,C0103,W0703
 
@@ -119,7 +121,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.12'
+__version__ = '0.12.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1015,7 +1017,7 @@ def generate_assignment(ipd, result):
             updated += 1
             publish_cdc(result, {"table": "assignment", "operation": "update"})
             bind = (task['id'], project['id'], result['rest']['inserted_id'], projectins.unit,
-                    task['key_text'], 'Assigned', assignment_user)
+                    task['key_text'], 'Assigned', None, assignment_user)
             g.c.execute(WRITE['TASK_AUDIT'], bind)
             if updated >= num_tasks:
                 break
@@ -1338,7 +1340,7 @@ def start_task(ipd, result):
         result['rest']['sql_statement'] = g.c.mogrify(WRITE['START_TASK'], bind)
         publish_cdc(result, {"table": "task", "operation": "update"})
         bind = (ipd['id'], task['project_id'], task['assignment_id'], task['key_type'],
-                task['key_text'], 'In progress', task['user'])
+                task['key_text'], 'In progress', None, task['user'])
         g.c.execute(WRITE['TASK_AUDIT'], bind)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
@@ -1390,13 +1392,12 @@ def complete_task(ipd, result):
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     bind = (ipd['id'], task['project_id'], task['assignment_id'], task['key_type'],
-            task['key_text'], disposition, task['user'])
+            task['key_text'], disposition, None, task['user'])
     g.c.execute(WRITE['TASK_AUDIT'], bind)
     for parm in projectins.optional_properties:
         if parm in ipd:
             update_property(ipd['id'], 'task', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
-    g.db.commit()
     # If this is the last task, complete the assignment
     assignment = get_assignment_by_id(task['assignment_id'])
     complete_assignment(ipd, result, assignment, True)
@@ -2280,15 +2281,15 @@ def show_task(task_id):
                                title='SQL error', message=sql_error(err))
     # Audit table
     try:
-        g.c.execute("SELECT disposition,user,create_date  FROM task_audit_vw WHERE "
-                    + "task_id=%s ORDER BY 3" % (task_id))
+        g.c.execute("SELECT disposition,user,note,create_date  FROM task_audit_vw WHERE "
+                    + "task_id=%s ORDER BY 4" % (task_id))
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     audit = []
     for row in rows:
-        audit.append([row['disposition'], row['user'], row['create_date']])
+        audit.append([row['disposition'], row['user'], row['note'], row['create_date']])
     navbar = generate_navbar('Tasks')
     return render_template('task.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, task=task_id,
@@ -4004,6 +4005,20 @@ def reassign_assignment_by_id(assignment_id): # pragma: no cover
         result['rest']['row_count'] += g.c.rowcount
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
+    try:
+        g.c.execute("SELECT * from task_vw WHERE assignment_id=%s", (assignment_id))
+        rows = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    audit_list = []
+    for task in rows:
+        bind = (task['id'], task['project_id'], assignment_id, task['key_type'],
+                task['key_text'], 'Reassigned', ('Reassigned to %s' % ipd['user']), task['user'])
+        audit_list.append(bind)
+    try:
+        g.c.executemany(WRITE['TASK_AUDIT'], audit_list)
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
     g.db.commit()
     return generate_response(result)
 
@@ -4046,7 +4061,7 @@ def delete_assignment(assignment_id):
             g.c.execute(stmt, bind)
             result['rest']['row_count'] += g.c.rowcount
             bind = (task['id'], task['project_id'], assignment_id, task['key_type'],
-                    task['key_text'], 'Unassigned', task['user'])
+                    task['key_text'], 'Unassigned', None, task['user'])
             g.c.execute(WRITE['TASK_AUDIT'], bind)
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)

@@ -340,6 +340,7 @@ SELECT
     ktype.name         AS key_type,
     t.key_text         AS key_text,
     t.disposition      AS disposition,
+    t.note             AS note,
     t.user             AS user,
     t.create_date      AS create_date
 FROM task_audit t

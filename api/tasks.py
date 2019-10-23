@@ -70,13 +70,10 @@ def generate_tasks(result, key_type, task_insert_props, existing_project):
     insert_list = []
     audit_list = []
     proprecs = {'insert': 0, 'update': 0}
-    print(existing_task)
     for key in existing_task:
         if key in query_task:
             operation = 'update'
             if key in inserted_key:
-                print(key)
-                print(existing_task[key])
                 bind = (existing_task[key], project_id, None, key_type, key,
                         'Created', result['rest']['user'])
                 audit_list.append(bind)

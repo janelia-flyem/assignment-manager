@@ -222,6 +222,7 @@ CREATE TABLE `task_audit` (
   `key_type_id` int(10) unsigned NOT NULL,
   `key_text` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `disposition` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs,
+  `note` text,
   `user` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `create_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

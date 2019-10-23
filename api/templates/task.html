@@ -69,11 +69,11 @@ onload="tableInitialize();"
   <h3>Audit trail</h3>
   <table id='taskaudit' class="tablesorter standard">
   <thead>
-  <tr><th>Action</th><th>User</th><th>Date</th></tr>
+  <tr><th>Action</th><th>User</th><th>Note</th><th>Date</th></tr>
   </thead>
   <tbody>
   {% for row in audit %}
-    <tr><td>{{ row[0] }}</td><td>{{ row[1] }}</td><td>{{ row[2] }}</td></tr>
+    <tr><td>{{row[0]}}</td><td>{{row[1]}}</td><td>{{row[2]}}</td><td>{{row[3]}}</td></tr>
   {% endfor %}
   </tbody>
   </table>
