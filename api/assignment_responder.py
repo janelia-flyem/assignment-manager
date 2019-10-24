@@ -4188,7 +4188,8 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
     # Are these tasks part of an assignment?
     assignment_id = None
     if assignment_name:
-        assignment_id, this_user = create_assignment_from_tasks(project, assignment_name, ipd, result)
+        assignment_id, this_user = create_assignment_from_tasks(project, assignment_name,
+                                                                ipd, result)
     # Create the tasks
     create_tasks_from_json(ipd, project['id'], projectins.unit,
                            projectins.task_insert_props, assignment_id, result, this_user)
