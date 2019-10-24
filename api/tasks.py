@@ -108,7 +108,7 @@ def generate_tasks(result, key_type, task_insert_props, existing_project):
     g.db.commit()
 
 
-def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, assignment_id, result):
+def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, assignment_id, result, this_user):
     ''' Create and persist a list of task from JSON input
         Keyword arguments:
           ipd: input parameters
@@ -117,6 +117,7 @@ def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, assignm
           task_insert_props: project properties to persist
           assignment_id: assignment ID
           result: result dictionary
+          this_user: user to assign tasks ti
     '''
     insert_list = []
     # Insert tasks
@@ -133,7 +134,7 @@ def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, assignm
             name = ipd['tasks'][key]['name']
         else:
             name = "%d.%s" % (project_id, key)
-        bind = (name, project_id, assignment_id, key_type, key, result['rest']['user'])
+        bind = (name, project_id, assignment_id, key_type, key, this_user)
         insert_list.append(bind)
     if insert_list:
         try:

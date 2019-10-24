@@ -121,7 +121,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.12.1'
+__version__ = '0.12.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1228,7 +1228,7 @@ def create_assignment_from_tasks(project, assignment_name, ipd, result):
         publish_cdc(result, {"table": "assignment", "operation": "insert"})
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    return assignment_id
+    return assignment_id, this_user
 
 
 def get_task_by_key(pid, key_type, key):
@@ -4188,10 +4188,10 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
     # Are these tasks part of an assignment?
     assignment_id = None
     if assignment_name:
-        assignment_id = create_assignment_from_tasks(project, assignment_name, ipd, result)
+        assignment_id, this_user = create_assignment_from_tasks(project, assignment_name, ipd, result)
     # Create the tasks
     create_tasks_from_json(ipd, project['id'], projectins.unit,
-                           projectins.task_insert_props, assignment_id, result)
+                           projectins.task_insert_props, assignment_id, result, this_user)
     g.db.commit()
     return generate_response(result)
 
