@@ -160,7 +160,7 @@ SELECT
     a.completion_date               AS completion_date,
     SEC_TO_TIME(a.duration)         AS duration,
     SEC_TO_TIME(a.working_duration) AS working_duration,
-    a.create_date      AS create_date
+    a.create_date                   AS create_date
 FROM assignment a
 JOIN project p ON (p.id = a.project_id)
 LEFT OUTER JOIN assignment_property_vw ap ON (ap.assignment_id=a.id AND ap.type='note')

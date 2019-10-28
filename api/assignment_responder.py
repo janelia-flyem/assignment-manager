@@ -121,7 +121,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.12.2'
+__version__ = '0.12.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1540,7 +1540,6 @@ def add_user_permissions(result, user, permissions):
 def get_token():
     ''' Get the assignment manager token
     '''
-    print("Requesting token")
     url = assignment_utilities.CONFIG['neuprint-auth']['url'] + 'api/token/assignment-manager'
     # url = url.replace('api/', '')
     cookies = {'flyem-services': request.cookies.get('flyem-services')}
@@ -1909,13 +1908,20 @@ def download(fname):
 
 @app.route('/')
 @app.route('/projectlist', methods=['GET', 'POST'])
-def show_projects(): # pylint: disable=R0914
+def show_projects(): # pylint: disable=R0914,R0912,R0915
     ''' Projects
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=" + request.url_root)
-    user, face = get_web_profile()
+    if not request.cookies.get(app.config['TOKEN']):
+        if request.cookies.get('flyem-services'):
+            token = get_token()
+            user, face = get_web_profile(token)
+        else:
+            return redirect("https://emdata1.int.janelia.org:15000/login?"
+                            + "redirect=" + request.url_root)
+    else:
+        token = request.cookies.get(app.config['TOKEN'])
+    if request.cookies.get(app.config['TOKEN']):
+        user, face = get_web_profile()
     permissions = check_permission(user)
     result = initialize_result()
     ipd = receive_payload(result)
@@ -1973,61 +1979,46 @@ def show_projects(): # pylint: disable=R0914
             if bool(row['cv_term'] in sys.modules):
                 newproject += '<option>%s</option>' % row['cv_term']
         newproject += '</select><hr style="border: 1px solid gray">'
+    if not token:
+        token = ''
     navbar = generate_navbar('Projects')
-    return render_template('projectlist.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar,
-                           newproject=newproject, protocols=protocols, projects=projects)
-
+    response = make_response(render_template('projectlist.html', urlroot=request.url_root,
+                                             face=face, dataset=app.config['DATASET'],
+                                             navbar=navbar, newproject=newproject,
+                                             protocols=protocols, projects=projects))
+    response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
+    return response
 
 @app.route('/assignmentlist', methods=['GET', 'POST'])
 def show_assignments(): # pylint: disable=R0914
-    ''' Default route
+    ''' Show assignments
     '''
-    if not request.cookies.get(app.config['TOKEN']):
-        if request.cookies.get('flyem-services'):
-            token = get_token()
-            user, face = get_web_profile(token)
-        else:
-            return redirect("https://emdata1.int.janelia.org:15000/login?"
-                            + "redirect=" + request.url_root)
-    else:
-        token = request.cookies.get(app.config['TOKEN'])
-    face = ''
-    if request.cookies.get(app.config['TOKEN']):
-        user, face = get_web_profile()
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=" + request.url_root)
+    user, face = get_web_profile()
     result = initialize_result()
     ipd = receive_payload(result)
     proofreaders, assignments = build_assignment_table(user, ipd)
     if request.method == 'POST':
         return {"assignments": assignments}
     protocols = protocol_select_list(result)
-    if not token:
-        token = ''
     navbar = generate_navbar('Assignments')
     response = make_response(render_template('assignmentlist.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
                                              navbar=navbar, assignments=assignments,
                                              protocols=protocols, proofreaders=proofreaders,))
-    response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
 
 
 @app.route('/assigntasks')
 def assign_tasks(): # pylint: disable=R0914
-    ''' Default route
+    ''' Assign tasks
     '''
-    if not request.cookies.get(app.config['TOKEN']):
-        if request.cookies.get('flyem-services'):
-            token = get_token()
-            user, face = get_web_profile(token)
-        else:
-            return redirect("https://emdata1.int.janelia.org:15000/login?"
-                            + "redirect=" + request.url_root)
-    else:
-        token = request.cookies.get(app.config['TOKEN'])
-    face = ''
-    if request.cookies.get(app.config['TOKEN']):
-        user, face = get_web_profile()
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return redirect("https://emdata1.int.janelia.org:15000/login?"
+                        + "redirect=" + request.url_root)
+    user, face = get_web_profile()
     if not check_permission(user, 'admin'):
         return render_template('error.html', urlroot=request.url_root,
                                title='Permission error',
@@ -2068,13 +2059,10 @@ def assign_tasks(): # pylint: disable=R0914
                      % (downloadable) + 'role="button">Download table</a>' + unassigned
     else:
         unassigned = "There are no projects with unassigned tasks"
-    if not token:
-        token = ''
     navbar = generate_navbar('Assignments')
     response = make_response(render_template('assigntasks.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
                                              navbar=navbar, unassigned=unassigned))
-    response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
 
 
