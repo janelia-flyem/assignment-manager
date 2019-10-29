@@ -75,5 +75,5 @@ BEARER = input("Bearer token: ")
 for user in USERS:
     record = {"janelia_id": user,
               "name": USERS[user] + '@gmail.com'}
-    call_responder('http://flyem-assignment.int.janelia.org/', 'adduser', record)
-    # call_responder('http://svirskasr-wm2.janelia.org/', 'adduser', record)
+    # call_responder('http://flyem-assignment.int.janelia.org/', 'adduser', record)
+    call_responder('http://svirskasr-wm2.janelia.org/', 'adduser', record)

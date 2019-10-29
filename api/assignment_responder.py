@@ -31,6 +31,7 @@ from assignment_utilities import (InvalidUsage, call_responder, check_permission
                                   working_duration)
 
 # pylint: disable=W0611
+from cell_type_validation import Cell_type_validation
 from connection_validation import Connection_validation
 from orphan_link import Orphan_link
 from cleave import Cleave
@@ -47,6 +48,9 @@ READ = {
     'CVTERMREL': "SELECT subject,relationship,object FROM "
                  + "cv_term_relationship_vw WHERE subject_id=%s OR "
                  + "object_id=%s",
+    'ELIGIBLE_CELL_TYPE_VALIDATION': "SELECT * from cell_type_validation_task_vw WHERE "
+                                     + "assignment_id IS NOT NULL AND start_date IS NULL "
+                                     + "ORDER BY project,create_date",
     'ELIGIBLE_CONNECTION_VALIDATION': "SELECT * from connection_validation_task_vw WHERE "
                                       + "assignment_id IS NOT NULL AND start_date IS NULL "
                                       + "ORDER BY project,create_date",
@@ -121,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.12.3'
+__version__ = '0.13.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1273,20 +1277,8 @@ def parse_tasks(ipd):
     if 'tasks' in ipd:
         if not isinstance(ipd['tasks'], (dict)):
             return "tasks payload must be a JSON dictionary"
-    elif 'points' in ipd:
-        if ipd['protocol'] == 'connection_validation':
-            if 'body_id' not in ipd:
-                return "connection_validation protocol requires a body_id"
-        if not isinstance(ipd['points'], (list)):
-            return "points payload must be an array of arrays"
-        if 'source' not in ipd and 'software' in ipd and ipd['software']:
-            ipd['source'] = ipd['software']
-        ipd['tasks'] = dict()
-        for pnt in ipd['points']:
-            name = '_'.join([str(i) for i in pnt])
-            if 'body_id' in ipd:
-                name = '_'.join([str(ipd['body_id']), name])
-            ipd['tasks'][name] = {}
+    else:
+        return "No tasks found in JSON payload"
     return None
 
 
@@ -2234,6 +2226,9 @@ def show_task(task_id):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
+    if not task:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Task not found', message="task %s was not found" % task_id)
     if not check_permission(user, ['admin', 'view']) and task['user'] != user:
         return render_template('error.html', urlroot=request.url_root,
                                title='No permission',
@@ -4146,24 +4141,24 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
     ipd['protocol'] = protocol
     ipd['project_name'] = project_name
     project = get_project_by_name_or_id(project_name)
-    error = parse_tasks(ipd)
+    constructor = globals()[protocol.capitalize()]
+    projectins = constructor()
+    if hasattr(projectins, 'parse_tasks'):
+        error = projectins.parse_tasks(ipd)
+    else:
+        error = parse_tasks(ipd)
     if error:
         raise InvalidUsage(error)
-    if 'tasks' not in ipd:
-        raise InvalidUsage("No tasks found in JSON payload")
     if project:
         if project['protocol'] != protocol:
             raise InvalidUsage("Additional tasks for an existing project " \
                                + "must be in the same protocol")
     else:
-        if 'priority' not in ipd:
-            ipd['priority'] = 10
+        ipd['priority'] = ipd['priority'] if 'priority' not in ipd else 10
         insert_project(ipd, result)
         project = dict()
         project['id'] = result['rest']['inserted_id']
         project['protocol'] = protocol
-    constructor = globals()[protocol.capitalize()]
-    projectins = constructor()
     if hasattr(projectins, 'validate_tasks'):
         error = projectins.validate_tasks(ipd['tasks'])
         if error:
@@ -4178,6 +4173,8 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
     if assignment_name:
         assignment_id, this_user = create_assignment_from_tasks(project, assignment_name,
                                                                 ipd, result)
+    else:
+        this_user = result['rest']['user']
     # Create the tasks
     create_tasks_from_json(ipd, project['id'], projectins.unit,
                            projectins.task_insert_props, assignment_id, result, this_user)
@@ -4358,6 +4355,7 @@ def get_task_info():
     execute_sql(result, 'SELECT * FROM task_vw', 'temp')
     get_task_properties(result)
     del result['temp']
+    print(result)
     return generate_response(result)
 
 

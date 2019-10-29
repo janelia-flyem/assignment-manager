@@ -241,6 +241,35 @@ LEFT OUTER JOIN cv_term pp ON (pp.id=p.protocol_id)
 WHERE pp.name='cleave'
 ;
 
+CREATE OR REPLACE VIEW cell_type_validation_task_vw AS
+SELECT 
+    t.id               AS id,
+    t.name             AS name,
+    p.name             AS project,
+    t.project_id       AS project_id,
+    a.name             AS assignment,
+    t.assignment_id    AS assignment_id,
+    ktype.name         AS key_type,
+    ktype.display_name AS key_type_display,
+    t.key_text         AS key_text,
+    tp.value           AS note,
+    t.disposition      AS disposition,
+    t.user             AS user,
+    t.start_date       AS start_date,
+    t.completion_date  AS completion_date,
+    t.duration         AS duration,
+    t.working_duration AS working_duration,
+    t.create_date      AS create_date
+FROM task t
+JOIN project p ON (p.id = t.project_id)
+LEFT OUTER JOIN assignment a ON (a.id = t.assignment_id)
+JOIN cv_term ktype ON (t.key_type_id = ktype.id)
+JOIN cv ktype_cv ON (ktype.cv_id = ktype_cv.id AND ktype_cv.name = 'key')
+LEFT OUTER JOIN task_property_vw tp ON (tp.task_id=t.id AND tp.type='note')
+LEFT OUTER JOIN cv_term pp ON (pp.id=p.protocol_id)
+WHERE pp.name='cell_type_validation'
+;
+
 CREATE OR REPLACE VIEW connection_validation_task_vw AS
 SELECT 
     t.id               AS id,
