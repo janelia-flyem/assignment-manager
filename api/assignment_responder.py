@@ -589,7 +589,7 @@ def get_project_properties(project):
     pprops.append(['Protocol:', project['protocol']])
     pprops.append(['Priority:', project['priority']])
     try:
-        g.c.execute("SELECT type,value FROM project_property_vw WHERE name=%s"
+        g.c.execute("SELECT type_display,value FROM project_property_vw WHERE name=%s"
                     "ORDER BY 1", (project['name'],))
         props = g.c.fetchall()
     except Exception as err:
@@ -598,7 +598,7 @@ def get_project_properties(project):
     for prop in props:
         if not prop['value']:
             continue
-        show = prop['type'].replace('_', ' ')
+        show = prop['type_display']
         show = 'ROI:' if prop['type'] == 'roi' else show.capitalize() + ':'
         pprops.append([show, prop['value']])
     return pprops
@@ -2273,7 +2273,7 @@ def show_task(task_id):
     tprops.append(['Duration:', task['duration']])
     tprops.append(['Working duration:', task['working_duration']])
     try:
-        g.c.execute("SELECT type,value FROM task_property_vw WHERE task_id=%s ORDER BY 1"
+        g.c.execute("SELECT type_display,value FROM task_property_vw WHERE task_id=%s ORDER BY 1"
                     % (task_id,))
         props = g.c.fetchall()
     except Exception as err:
@@ -2282,8 +2282,7 @@ def show_task(task_id):
     for prop in props:
         if not prop['value']:
             continue
-        show = prop['type'].replace('_', ' ').capitalize() + ':'
-        tprops.append([show, prop['value']])
+        tprops.append([prop['type_display'], prop['value']])
     # Controls
     try:
         controls = get_task_controls(user, task_id, task)

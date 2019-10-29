@@ -102,13 +102,14 @@ WHERE cv.id = cvt.cv_id
 ;
 
 CREATE OR REPLACE VIEW project_property_vw AS
-SELECT pp.id          AS id
-      ,p.id           AS project_id
-      ,p.name         AS name
-      ,cv.name        AS cv
-      ,cv_term.name   AS type
-      ,pp.value       AS value
-      ,pp.create_date AS create_date
+SELECT pp.id                 AS id
+      ,p.id                  AS project_id
+      ,p.name                AS name
+      ,cv.name               AS cv
+      ,cv_term.name          AS type
+      ,cv_term.display_name  AS type_display
+      ,pp.value              AS value
+      ,pp.create_date        AS create_date
 FROM project_property pp
 JOIN project p ON (pp.project_id = p.id)
 JOIN cv_term ON (pp.type_id = cv_term.id)
@@ -134,13 +135,14 @@ LEFT OUTER JOIN project_property_vw nt ON (nt.project_id=p.id AND nt.type='note'
 ;
 
 CREATE OR REPLACE VIEW assignment_property_vw AS
-SELECT ap.id           AS id
-      ,a.id            AS assignment_id
-      ,a.name          AS name
-      ,cv.name         AS cv
-      ,cv_term.name    AS type
-      ,ap.value        AS value
-      ,ap.create_date  AS create_date
+SELECT ap.id                AS id
+      ,a.id                 AS assignment_id
+      ,a.name               AS name
+      ,cv.name              AS cv
+      ,cv_term.name         AS type
+      ,cv_term.display_name AS type_display
+      ,ap.value             AS value
+      ,ap.create_date       AS create_date
 FROM assignment_property ap
 JOIN assignment a ON (ap.assignment_id = a.id)
 JOIN cv_term ON (ap.type_id = cv_term.id)
@@ -168,13 +170,14 @@ LEFT OUTER JOIN cv_term pp ON (pp.id=p.protocol_id)
 ;
 
 CREATE OR REPLACE VIEW task_property_vw AS
-SELECT tp.id          AS id
-      ,t.id           AS task_id
-      ,t.name         AS name
-      ,cv.name        AS cv
-      ,cv_term.name   AS type
-      ,tp.value       AS value
-      ,tp.create_date AS create_date
+SELECT tp.id                AS id
+      ,t.id                 AS task_id
+      ,t.name               AS name
+      ,cv.name              AS cv
+      ,cv_term.name         AS type
+      ,cv_term.display_name AS type_display
+      ,tp.value             AS value
+      ,tp.create_date       AS create_date
 FROM task_property tp
 JOIN task t ON (tp.task_id = t.id)
 JOIN cv_term ON (tp.type_id = cv_term.id)
