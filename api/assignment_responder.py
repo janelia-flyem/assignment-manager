@@ -598,9 +598,7 @@ def get_project_properties(project):
     for prop in props:
         if not prop['value']:
             continue
-        show = prop['type_display']
-        show = 'ROI:' if prop['type'] == 'roi' else show.capitalize() + ':'
-        pprops.append([show, prop['value']])
+        pprops.append([prop['type_display'], prop['value']])
     return pprops
 
 
