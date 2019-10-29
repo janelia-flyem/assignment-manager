@@ -1413,6 +1413,35 @@ def get_task_properties(result):
         result['data'].append(task)
 
 
+def return_tasks_json(assignment, result):
+    ''' Given an assignment name, return JSON
+        Keyword arduments:
+          assignment: assignment name
+          result: result dictionary
+    '''
+    result['data'] = dict()
+    result['data']['task list'] = list()
+    sql = 'SELECT task_id,type,value FROM task_property_vw tp ' \
+          + 'JOIN task_vw t ON (t.id=tp.task_id) WHERE t.assignment=%s'
+    try:
+        g.c.execute(sql, (assignment,))
+        taskprops = g.c.fetchall()
+    except Exception as err:
+        return sql_error(err)
+    this_task = ''
+    task = {}
+    for tp in taskprops:
+        if this_task != tp['task_id']:
+            if this_task:
+                result['data']['task list'].append(task)
+            this_task = tp['task_id']
+            task = {"assignment_manager_task_id": this_task}
+        task[tp['type']] = tp['value']
+    if this_task:
+        result['data']['task list'].append(task)
+    return None
+
+
 def build_task_table(aname):
     ''' Build a table of an assignment's tasks
         Keyword arguments:
@@ -3790,6 +3819,46 @@ def new_assignment(project_name):
     if not('name' in ipd and ipd['name'] != ''):
         ipd['name'] = ' '.join([project_name, random_string()])
     generate_assignment(ipd, result)
+    return generate_response(result)
+
+
+@app.route('/assignment/json/<string:aname>')
+def return_assignment_json(aname):
+    ''' Return JSON for an assignment
+    ---
+    tags:
+      - Assignment
+    parameters:
+      - in: path
+        name: assignment
+        schema:
+          type: string
+        required: true
+        description: assignment name
+    responses:
+      200:
+          description: Assignment JSON
+      404:
+          description: Assignment not found
+    '''
+    result = initialize_result()
+    try:
+        g.c.execute('SELECT p.name FROM project_vw p JOIN assignment a ' \
+                    + 'ON (a.project_id=p.id) WHERE a.name=%s', (aname,))
+        pname = g.c.fetchone()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if not pname:
+        raise InvalidUsage("Assignment %s does not exist" % aname, 404)
+    project = get_project_by_name_or_id(pname['name'])
+    constructor = globals()[project['protocol'].capitalize()]
+    projectins = constructor()
+    if hasattr(projectins, 'return_json'):
+        error = projectins.return_json(aname, g, result)
+    else:
+        error = return_tasks_json(aname, result)
+    if error:
+        raise InvalidUsage(error, 400)
     return generate_response(result)
 
 

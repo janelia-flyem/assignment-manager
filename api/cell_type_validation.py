@@ -17,12 +17,14 @@ class Cell_type_validation:
         self.optional_properties = ['note', 'group', 'source']
         self.allowable_filters = []
         # self.no_assignment = True
-        self.required_task_props = ['original_uuid', 'match_score', 'task id', 'comment', 'assigned', 'task type']
-        self.task_insert_props = ['original_uuid', 'match_score', 'task id', 'comment', 'assigned', 'task type']
+        self.required_task_props = ['body ID A', 'body ID B', 'original_uuid', 'match_score', 'task id', 'comment',
+                                    'assigned', 'task type']
+        self.task_insert_props = self.required_task_props
 
     def parse_tasks(self, ipd):
         '''
-        Given a tasks list, put it in a format we can use
+        Given a task list, put it in a format we can use
+        Keyword arguments:
           self: object
           ipd: input parameters
         '''
