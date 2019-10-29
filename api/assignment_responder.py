@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.13.0'
+__version__ = '0.13.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -561,8 +561,7 @@ def generate_project(protocol, result):
         existing_project = True
         print("Project %s (ID %s) already exists" % (project['name'], project['id']))
     else:
-        if 'priority' not in ipd:
-            ipd['priority'] = 10
+        ipd['priority'] = ipd['priority'] if 'priority' in ipd else 10
         insert_project(ipd, result)
     # Add project properties from input parameters
     ipd['source'] = 'unknown' if 'source' not in ipd else ipd['source']
@@ -4154,7 +4153,7 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
             raise InvalidUsage("Additional tasks for an existing project " \
                                + "must be in the same protocol")
     else:
-        ipd['priority'] = ipd['priority'] if 'priority' not in ipd else 10
+        ipd['priority'] = ipd['priority'] if 'priority' in ipd else 10
         insert_project(ipd, result)
         project = dict()
         project['id'] = result['rest']['inserted_id']

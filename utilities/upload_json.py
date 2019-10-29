@@ -53,9 +53,12 @@ def process_file(file):
     except IOError:
         LOGGER.critical("Could not read file %s", file)
         sys.exit(-1)
-    assignment = os.path.splitext(file)
-    endpoint = '/'.join(['tasks', ARGS.protocol, ARGS.project, assignment[0]])
-    #CONFIG['assignment-manager'] = {"url": "http://svirskasr-wm2.janelia.org/"} #PLUG
+    if ARGS.assign:
+        assignment = os.path.splitext(file)
+        endpoint = '/'.join(['tasks', ARGS.protocol, ARGS.project, assignment[0]])
+    else:
+        endpoint = '/'.join(['tasks', ARGS.protocol, ARGS.project])
+    CONFIG['assignment-manager'] = {"url": "http://svirskasr-wm2.janelia.org/"} #PLUG
     try:
         content = json.loads(content)
     except ValueError:
@@ -77,6 +80,8 @@ if __name__ == '__main__':
                         help='Protocol (optional, default=connection_validation)')
     PARSER.add_argument('--project', dest='project', action='store', required=True,
                         help='Project name')
+    PARSER.add_argument('--assign', action='store_true', dest='assign',
+                        default=False, help='Create assignment (use file name)')
     PARSER.add_argument('--bearer', dest='bearer', action='store',
                         help='JWT token')
     PARSER.add_argument('--file', dest='file', action='store', required=True,

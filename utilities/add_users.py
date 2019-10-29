@@ -44,6 +44,10 @@ USERS = {"alvaradoc": "alvaradocx4",
          "yangt": "tansygarvey",
          "zhaot": "tingzhao"
         }
+PRIVILEGED = ['neacee', 'rivlinp']
+PERMISSIONS = ['admin', 'Connectome Annotation Team', 'FlyEM Project and Software',
+               'FlyEM Proofreaders', 'cell_type_validation', 'cleave',
+               'connection_validation', 'orphan_link', 'to_do']
 
 def call_responder(url, endpoint, payload=''):
     ''' Call a responder
@@ -72,8 +76,13 @@ def call_responder(url, endpoint, payload=''):
     return
 
 BEARER = input("Bearer token: ")
+SERVER = 'http://flyem-assignment.int.janelia.org/'
+SERVER = 'http://svirskasr-wm2.janelia.org/'
 for user in USERS:
     record = {"janelia_id": user,
               "name": USERS[user] + '@gmail.com'}
-    # call_responder('http://flyem-assignment.int.janelia.org/', 'adduser', record)
-    call_responder('http://svirskasr-wm2.janelia.org/', 'adduser', record)
+    call_responder(SERVER, 'adduser', record)
+for user in PRIVILEGED:
+    record = {"name": USERS[user] + '@gmail.com',
+              "permissions": PERMISSIONS}
+    call_responder(SERVER, 'user_permissions', record)
