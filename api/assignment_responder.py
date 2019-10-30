@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.13.1'
+__version__ = '0.13.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1419,8 +1419,9 @@ def return_tasks_json(assignment, result):
     '''
     result['data'] = dict()
     result['data']['task list'] = list()
-    sql = 'SELECT task_id,type,value FROM task_property_vw tp ' \
-          + 'JOIN task_vw t ON (t.id=tp.task_id) WHERE t.assignment=%s'
+    sql = 'SELECT task_id,type,value,key_type,key_text FROM task_vw t ' \
+          + 'LEFT OUTER JOIN task_property_vw tp ON (t.id=tp.task_id) WHERE ' \
+          + 't.assignment=%s'
     try:
         g.c.execute(sql, (assignment,))
         taskprops = g.c.fetchall()
@@ -1428,15 +1429,19 @@ def return_tasks_json(assignment, result):
         return sql_error(err)
     this_task = ''
     task = {}
+    task_count = 0
     for tp in taskprops:
         if this_task != tp['task_id']:
             if this_task:
                 result['data']['task list'].append(task)
             this_task = tp['task_id']
-            task = {"assignment_manager_task_id": this_task}
+            task = {"assignment_manager_task_id": this_task,
+                    tp['key_type']: tp['key_text']}
+            task_count += 1
         task[tp['type']] = tp['value']
     if this_task:
         result['data']['task list'].append(task)
+    result['rest']['row_count'] = task_count
     return None
 
 
