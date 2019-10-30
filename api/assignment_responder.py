@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.13.3'
+__version__ = '0.13.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2256,7 +2256,11 @@ def show_task(task_id):
                         + "redirect=" + request.url_root)
     user, face = get_web_profile()
     try:
-        g.c.execute("SELECT * FROM task_vw WHERE id=%s" % (task_id,))
+        sql = "SELECT * FROM task_vw WHERE id=%s"
+        if not task_id.isdigit():
+            sql = sql.replace("id", "name")
+        print(sql)
+        g.c.execute(sql, (task_id,))
         task = g.c.fetchone()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
@@ -2269,6 +2273,7 @@ def show_task(task_id):
                                title='No permission',
                                message="You don't have permission to view " \
                                        + "other proofreader's assignments")
+    task_id = task['id']
     tprops = []
     tprops.append(['Project:', task['project']])
     tprops.append(['Protocol:', task['protocol']])
