@@ -2152,6 +2152,9 @@ def show_project(pname):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
+    if not project:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Not found', message="Project %s was not found" % pname)
     pprops = get_project_properties(project)
     controls = ''
     if check_permission(user, 'admin'):
