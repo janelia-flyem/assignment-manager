@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.13.2'
+__version__ = '0.13.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1419,7 +1419,7 @@ def return_tasks_json(assignment, result):
     '''
     result['data'] = dict()
     result['data']['task list'] = list()
-    sql = 'SELECT task_id,type,value,key_type,key_text FROM task_vw t ' \
+    sql = 'SELECT t.id AS task_id,type,value,key_type,key_text FROM task_vw t ' \
           + 'LEFT OUTER JOIN task_property_vw tp ON (t.id=tp.task_id) WHERE ' \
           + 't.assignment=%s'
     try:
@@ -1438,7 +1438,8 @@ def return_tasks_json(assignment, result):
             task = {"assignment_manager_task_id": this_task,
                     tp['key_type']: tp['key_text']}
             task_count += 1
-        task[tp['type']] = tp['value']
+        if tp['type']:
+            task[tp['type']] = tp['value']
     if this_task:
         result['data']['task list'].append(task)
     result['rest']['row_count'] = task_count
