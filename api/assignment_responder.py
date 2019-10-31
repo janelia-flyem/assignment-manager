@@ -3872,7 +3872,7 @@ def return_assignment_json(aname):
         raise InvalidUsage(error, 400)
     if project['protocol'] == 'cell_type_validation':
         result['data']['file type'] = 'Neu3'
-        result['data']['version'] = '1'
+        result['data']['file version'] = '1'
     return generate_response(result)
 
 
