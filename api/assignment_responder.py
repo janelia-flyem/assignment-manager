@@ -1591,18 +1591,16 @@ def get_web_profile(token=None):
     return user, face
 
 
-def check_token(user, face):
+def check_token():
     ''' Check to see if the user has a valid token
-        Keyword arguments:
-          user: user name (returned)
-          face: image of Workday picture (returned)
+        Returns:
+          user: user name
+          face: Workday image HTML
     '''
     if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return False
+        return False, False
     user, face = get_web_profile()
-    print(user)
-    print(face)
-    return True
+    return user, face
 
 
 def generate_navbar(active):
@@ -1756,8 +1754,8 @@ def handle_invalid_usage(error):
 def profile():
     ''' Show user profile
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         g.c.execute('SELECT * FROM user_vw WHERE name=%s', (user,))
@@ -1781,8 +1779,8 @@ def profile():
 def user_list():
     ''' Show list of users
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, ['admin', 'view']):
         return redirect("/profile")
@@ -1835,8 +1833,8 @@ def user_list():
 def user_protocol_list(protocol):
     ''' Allow users to be granted/denied a specific protocol
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, ['admin', 'view']):
         return render_template('error.html', urlroot=request.url_root,
@@ -1882,8 +1880,8 @@ def user_protocol_list(protocol):
 def user_config(uname):
     ''' Show user profile
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, ['admin', 'view']):
         return render_template('error.html', urlroot=request.url_root,
@@ -2029,8 +2027,8 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
 def show_assignments(): # pylint: disable=R0914
     ''' Show assignments
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     result = initialize_result()
     ipd = receive_payload(result)
@@ -2050,8 +2048,8 @@ def show_assignments(): # pylint: disable=R0914
 def assign_tasks(): # pylint: disable=R0914
     ''' Assign tasks
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, 'admin'):
         return render_template('error.html', urlroot=request.url_root,
@@ -2104,8 +2102,8 @@ def assign_tasks(): # pylint: disable=R0914
 def show_tasks():
     ''' Projects
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         g.c.execute(READ['TASKS'], user)
@@ -2151,8 +2149,8 @@ def show_tasks():
 def show_project(pname):
     ''' Show information for a project
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         g.c.execute("SELECT * FROM project_vw WHERE name=%s", (pname,))
@@ -2210,8 +2208,8 @@ def show_project(pname):
 def show_assignment(aname):
     ''' Show information for an assignment
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         g.c.execute(READ['ASSIGNMENTN'], (aname,))
@@ -2258,8 +2256,8 @@ def show_task(task_id):
     ''' Show information for a task
     '''
     # pylint: disable=R0911
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         sql = "SELECT * FROM task_vw WHERE id=%s"
@@ -2328,8 +2326,8 @@ def show_task(task_id):
 def project_create(protocol):
     ''' Create a new project
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, 'admin'):
         return render_template('error.html', urlroot=request.url_root,
@@ -2349,8 +2347,8 @@ def project_create(protocol):
 def assign_to(pname):
     ''' Make an assignment for a project
     '''
-    user = face = ''
-    if not check_token(user, face):
+    user, face = check_token()
+    if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     project = ''
     if not check_permission(user, 'admin'):
