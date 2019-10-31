@@ -1,6 +1,8 @@
 ''' Cell_type_validation protocol
 '''
 
+import json
+
 class Cell_type_validation:
     '''
     Cell_type_validation protocol object
@@ -17,9 +19,8 @@ class Cell_type_validation:
         self.optional_properties = ['note', 'group', 'source']
         self.allowable_filters = []
         # self.no_assignment = True
-        self.required_task_props = ['body ID A', 'body ID B', 'original_uuid', 'match_score', 'task id', 'comment',
-                                    'assigned', 'task type']
-        self.task_insert_props = self.required_task_props
+        self.required_task_props = ['body ID A', 'body ID B', 'match_score', 'task result id', 'task type']
+        self.task_insert_props = ['body ID A', 'body ID B', 'match_score', 'task result id', 'task type', 'debug']
 
     def parse_tasks(self, ipd):
         '''
@@ -36,10 +37,12 @@ class Cell_type_validation:
         for task in ipd['task list']:
             name = '_'.join([str(task['body ID A']), str(task['body ID B'])])
             ipd['tasks'][name] = {}
-            for i in self.required_task_props:
+            for i in self.task_insert_props:
+                if i == 'debug':
+                    task[i] = json.dumps(task[i])
                 if i in task:
                     ipd['tasks'][name][i] = task[i]
-                else:
+                elif i in self.required_task_props:
                     return "Missing %s for task %s" % (i, name)
         return
 
