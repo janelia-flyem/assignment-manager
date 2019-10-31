@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.13.5'
+__version__ = '0.13.6'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1580,6 +1580,8 @@ def get_token():
 
 def get_web_profile(token=None):
     ''' Get the username and picture
+        Keyword arguments:
+          token: auth token
     '''
     if not token:
         token = request.cookies.get(app.config['TOKEN'])
@@ -1587,6 +1589,20 @@ def get_web_profile(token=None):
     user = resp['email']
     face = '<img class="user_image" src="%s" alt="%s">' % (resp['image-url'], user)
     return user, face
+
+
+def check_token(user, face):
+    ''' Check to see if the user has a valid token
+        Keyword arguments:
+          user: user name (returned)
+          face: image of Workday picture (returned)
+    '''
+    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
+        return False
+    user, face = get_web_profile()
+    print(user)
+    print(face)
+    return True
 
 
 def generate_navbar(active):
@@ -1740,10 +1756,9 @@ def handle_invalid_usage(error):
 def profile():
     ''' Show user profile
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=/")
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         g.c.execute('SELECT * FROM user_vw WHERE name=%s', (user,))
         rec = g.c.fetchone()
@@ -1766,10 +1781,9 @@ def profile():
 def user_list():
     ''' Show list of users
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=/")
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, ['admin', 'view']):
         return redirect("/profile")
     try:
@@ -1821,10 +1835,9 @@ def user_list():
 def user_protocol_list(protocol):
     ''' Allow users to be granted/denied a specific protocol
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=/")
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, ['admin', 'view']):
         return render_template('error.html', urlroot=request.url_root,
                                title='Permission error',
@@ -1869,10 +1882,9 @@ def user_protocol_list(protocol):
 def user_config(uname):
     ''' Show user profile
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=/")
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, ['admin', 'view']):
         return render_template('error.html', urlroot=request.url_root,
                                title='Permission error',
@@ -1940,8 +1952,7 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
             token = get_token()
             user, face = get_web_profile(token)
         else:
-            return redirect("https://emdata1.int.janelia.org:15000/login?"
-                            + "redirect=" + request.url_root)
+            return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     else:
         token = request.cookies.get(app.config['TOKEN'])
     if request.cookies.get(app.config['TOKEN']):
@@ -2013,14 +2024,14 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
 
+
 @app.route('/assignmentlist', methods=['GET', 'POST'])
 def show_assignments(): # pylint: disable=R0914
     ''' Show assignments
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=" + request.url_root)
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     result = initialize_result()
     ipd = receive_payload(result)
     proofreaders, assignments = build_assignment_table(user, ipd)
@@ -2039,10 +2050,9 @@ def show_assignments(): # pylint: disable=R0914
 def assign_tasks(): # pylint: disable=R0914
     ''' Assign tasks
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=" + request.url_root)
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, 'admin'):
         return render_template('error.html', urlroot=request.url_root,
                                title='Permission error',
@@ -2094,10 +2104,9 @@ def assign_tasks(): # pylint: disable=R0914
 def show_tasks():
     ''' Projects
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=" + request.url_root)
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         g.c.execute(READ['TASKS'], user)
         rows = g.c.fetchall()
@@ -2142,10 +2151,9 @@ def show_tasks():
 def show_project(pname):
     ''' Show information for a project
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=" + request.url_root)
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         g.c.execute("SELECT * FROM project_vw WHERE name=%s", (pname,))
         project = g.c.fetchone()
@@ -2202,10 +2210,9 @@ def show_project(pname):
 def show_assignment(aname):
     ''' Show information for an assignment
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=" + request.url_root)
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         g.c.execute(READ['ASSIGNMENTN'], (aname,))
         assignment = g.c.fetchone()
@@ -2251,10 +2258,9 @@ def show_task(task_id):
     ''' Show information for a task
     '''
     # pylint: disable=R0911
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=" + request.url_root)
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
         sql = "SELECT * FROM task_vw WHERE id=%s"
         if not task_id.isdigit():
@@ -2322,10 +2328,9 @@ def show_task(task_id):
 def project_create(protocol):
     ''' Create a new project
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=" + request.url_root)
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     if not check_permission(user, 'admin'):
         return render_template('error.html', urlroot=request.url_root,
                                title='Permission error',
@@ -2344,10 +2349,9 @@ def project_create(protocol):
 def assign_to(pname):
     ''' Make an assignment for a project
     '''
-    if not request.cookies.get(app.config['TOKEN']) or not request.cookies.get('flyem-services'):
-        return redirect("https://emdata1.int.janelia.org:15000/login?"
-                        + "redirect=" + request.url_root)
-    user, face = get_web_profile()
+    user = face = ''
+    if not check_token(user, face):
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     project = ''
     if not check_permission(user, 'admin'):
         return render_template('error.html', urlroot=request.url_root,
