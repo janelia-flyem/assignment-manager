@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.13.4'
+__version__ = '0.13.5'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -3870,6 +3870,9 @@ def return_assignment_json(aname):
         error = return_tasks_json(aname, result)
     if error:
         raise InvalidUsage(error, 400)
+    if project['protocol'] == 'cell_type_validation':
+        result['data']['file type'] = 'Neu3'
+        result['data']['version'] = '1'
     return generate_response(result)
 
 
