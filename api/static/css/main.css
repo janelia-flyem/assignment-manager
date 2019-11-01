@@ -64,3 +64,32 @@ a:hover, a:active {
   color: #ccc;
   background: #336;
 }
+
+/* Info link */
+.infolink:before
+{
+    content: '?';
+    display: inline-block;
+    font-family: sans-serif;
+    font-weight: bold;
+    text-align: center;
+    width: 20px;
+    height: 20px;
+    font-size: 12pt;
+    line-height: 2.4ex;
+    border-radius: 15px;
+    margin-right: 4px;
+    padding: 1px;
+    color: blue;
+    background: white;
+    border: 1px solid blue;
+    text-decoration: none;
+}
+
+.infolink:hover:before
+{
+    color: white;
+    background: blue;
+    border-color: white;
+    text-decoration: none;
+}

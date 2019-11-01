@@ -38,9 +38,9 @@ class Cell_type_validation:
             name = '_'.join([str(task['body ID A']), str(task['body ID B'])])
             ipd['tasks'][name] = {}
             for i in self.task_insert_props:
-                if i == 'debug':
-                    task[i] = json.dumps(task[i])
                 if i in task:
+                    if i == 'debug':
+                        task[i] = json.dumps(task[i])
                     ipd['tasks'][name][i] = task[i]
                 elif i in self.required_task_props:
                     return "Missing %s for task %s" % (i, name)

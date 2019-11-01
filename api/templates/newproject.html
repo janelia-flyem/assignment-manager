@@ -100,6 +100,7 @@ function create_project(count=0) {
   });
 }
 $('select').selectpicker();
+$('#sb').prop('disabled', true);
 </script>
 {% endblock %}
 {% block content %}
@@ -108,7 +109,7 @@ $('select').selectpicker();
   <h4>Required parameters:</h4>
   <div class="grid-container" width="500">
     <div class="grid-item">Project name:</div>
-    <div class="grid-item"><input id="project_name" size=30></div>
+    <div class="grid-item"><input id="project_name" size=30 onchange="$('#sb').prop('disabled', false);"></div>
     {{required|safe}}
   </div>
   {{filt|safe}}
@@ -119,5 +120,5 @@ $('select').selectpicker();
   </div>
   <br>
   <input type="hidden" id="protocol" value="{{protocol}}">
-  <button type="submit" id="sb" class="btn btn-primary" onclick="create_project();" href="#">Create project</button>
+  <button type="submit" id="sb" class="btn btn-primary" onclick="create_project();" href="#" disabled>Create project</button>
 {% endblock %}

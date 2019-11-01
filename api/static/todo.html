@@ -1,0 +1,20 @@
+<span style='color:black'>
+Expected input is JSON with a "points" list of one or more tasks.
+Valid input for this protocol will create a project (if needed) containing all tasks in the "tasks" dictionary:
+<pre>
+{
+  <span style='color:#ccc'>"note": "Project note",
+  "group": "Project group",
+  "source": "Neu3',</span>
+  "tasks": {"100_100_100": {"todo_type": "split",
+                            "priority": "low"},
+            "200_200_200": {"todo_type": "split",
+                            "priority": "medium"},
+            "300_300_300": {"todo_type": "split",
+                            "priority": "high"}
+           }
+}
+</pre>
+Elements in <span style='color:#ccc'>gray</span> are optional, all others are required. Any additional data not shown above is ignored.
+Dictionary keys are in the format <span style='color:#3cc'>X</span>_<span style='color:#3cc'>Y</span>_<span style='color:#3cc'>Z</span>.
+</span>

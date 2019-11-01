@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.13.7'
+__version__ = '0.14.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -903,44 +903,20 @@ def check_project(project, ipd):
         raise InvalidUsage("Project %s is not active" % project['name'])
 
 
-def process_projectparms(projectins):
-    ''' Return filters and requied/optional parameter HTML
+def process_optional_parms(projectins, filt, filtjs):
+    ''' Return filters and optional parameter HTML
         Keyword arguments:
           projectins: project instance
+          filt: filter HTML
+          filtjs: filter JavaScript
+        Returns:
+          filt: filter HTML
+          filtjs: filter JavaScript
+          optional: optional HTML
+          optionaljs: optional JavaScript
     '''
-    required = optional = optionaljs = filt = filtjs = ''
-    # ROI is required for NeuPrint queries
-    if projectins.task_populate_method == 'query_neuprint':
-        filt += '<div class="grid-item">Select ROIs:</div><div class="grid-item">' \
-                + '<select id="roi" class="selectpicker" multiple data-live-search="true"' \
-                + ' onchange="create_project(1);">'
-        payload = "MATCH (n:Meta:%s) RETURN n.superLevelRois" % (app.config['DATASET'].lower())
-        rois = neuprint_custom_query(payload)
-        rlist = rois['data'][0][0]
-        rlist.sort()
-        for roi in rlist:
-            filt += '<option>%s</option>' % roi
-        filt += '</select></div>'
-    elif projectins.task_populate_method == 'json_upload':
-        required += '''
-        <div class="grid-item">JSON string:</div>
-        <div class="grid-item"><textarea class="form-control" id="input_json" rows="5"></textarea></div>
-        '''
-    required += '''
-    <div class="grid-item">Priority:</div>
-    <div class="grid-item"><input id="slider" width="300" value="10"/><span style="font-size:14pt; color:#fff;" id="priority"></span> (1-50; 1=highest)</div>
-    </div>
-    <script>
-      $('#slider').slider({
-        uiLibrary: 'bootstrap4',
-        min: 1, max: 50, value: 10,
-        slide: function (e, value) {
-          document.getElementById('priority').innerText = value;
-        }
-      });
-    </script>
-    '''
-    # Optional parameters
+
+    optional = optionaljs = ''
     for opt in projectins.optional_properties:
         if opt in ['roi', 'source']:
             continue
@@ -962,6 +938,68 @@ def process_projectparms(projectins):
         optional += '<div class="grid-item">%s:</div><div class="grid-item"><input id="%s"></div>' \
                     % (opt, opt)
         optionaljs += "if ($('#%s').val()) { array['%s'] = $('#%s').val(); }\n" % (opt, opt, opt)
+    return filt, filtjs, optional, optionaljs
+
+
+def process_projectparms(projectins, protocol):
+    ''' Return filters and requied/optional parameter HTML
+        Keyword arguments:
+          projectins: project instance
+    '''
+    required = filt = filtjs = ''
+    # ROI is required for NeuPrint queries
+    if projectins.task_populate_method == 'query_neuprint':
+        filt += '<div class="grid-item">Select ROIs:</div><div class="grid-item">' \
+                + '<select id="roi" class="selectpicker" multiple data-live-search="true"' \
+                + ' onchange="create_project(1);">'
+        payload = "MATCH (n:Meta:%s) RETURN n.superLevelRois" % (app.config['DATASET'].lower())
+        rois = neuprint_custom_query(payload)
+        rlist = rois['data'][0][0]
+        rlist.sort()
+        for roi in rlist:
+            filt += '<option>%s</option>' % roi
+        filt += '</select></div>'
+    elif projectins.task_populate_method == 'json_upload':
+        with open('static/%s.html' % (protocol)) as PJSON:
+            json_content = PJSON.read()
+        PJSON.close()
+        required += '''
+        <div class="grid-item">JSON string<a class="infolink" data-toggle="modal" data-target="#jsonModal"></a>:</div>
+        <div class="grid-item"><textarea class="form-control" id="input_json" rows="5"></textarea></div>
+        <div class="modal fade" id="jsonModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+        <div class="modal-content">
+        <div class="modal-header">
+        <h5 class="modal-title" id="exampleModalLabel">%s</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+        </div>
+        <div class="modal-body">%s</div>
+        <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+        </div>
+        </div>
+        </div>
+        </div>
+        '''
+        required = required % (protocol, json_content)
+    required += '''
+    <div class="grid-item">Priority:</div>
+    <div class="grid-item"><input id="slider" width="300" value="10"/><span style="font-size:14pt; color:#fff;" id="priority"></span> (1-50; 1=highest)</div>
+    </div>
+    <script>
+      $('#slider').slider({
+        uiLibrary: 'bootstrap4',
+        min: 1, max: 50, value: 10,
+        slide: function (e, value) {
+          document.getElementById('priority').innerText = value;
+        }
+      });
+    </script>
+    '''
+    # Optional parameters
+    filt, filtjs, optional, optionaljs = process_optional_parms(projectins, filt, filtjs)
     # Filter parameters
     for fil in projectins.allowable_filters:
         filt += '<div class="grid-item">%s:</div><div class="grid-item"><input id="%s" ' \
@@ -2356,7 +2394,7 @@ def project_create(protocol):
                                message="You don't have permission to create projects")
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
-    required, optional, optionaljs, filt, filtjs = process_projectparms(projectins)
+    required, optional, optionaljs, filt, filtjs = process_projectparms(projectins, protocol)
     navbar = generate_navbar('Projects')
     return render_template('newproject.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, protocol=protocol,
