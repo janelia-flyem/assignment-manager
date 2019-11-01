@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.13.6'
+__version__ = '0.13.7'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2106,6 +2106,27 @@ def show_tasks():
     if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
+        g.c.execute('SELECT cvt.display_name,t.disposition,COUNT(1) AS c FROM task t ' \
+                    + 'JOIN project p ON (t.project_id=p.id) JOIN cv_term cvt ON ' \
+                    + '(cvt.id=protocol_id) GROUP BY 1,2')
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    tasksumm = '''
+        <table id="tasksumm" class="tablesorter standard"><thead>
+        <tr><th>Protocol</th><th>Disposition</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+    '''
+    if not rows:
+        tasksumm = 'No tasks were found'
+    else:
+        for row in rows:
+            tasksumm += '<tr><td>%s</td><td>%s</td><td>%s</td></tr>' \
+                        % (row['display_name'], row['disposition'], row['c'])
+        tasksumm += '</tbody></table>'
+    try:
         g.c.execute(READ['TASKS'], user)
         rows = g.c.fetchall()
     except Exception as err:
@@ -2114,7 +2135,7 @@ def show_tasks():
     protocols = dict()
     if rows:
         tasks = '''
-        <table id="projects" class="tablesorter standard">
+        <table id="tasks" class="tablesorter standard">
         <thead>
         <tr><th>Task</th><th>Project</th><th>Assignment</th><th>Priority</th><th>Started</th><th>Completed</th><th>Disposition</th><th>Duration</th></tr>
         </thead>
@@ -2142,7 +2163,7 @@ def show_tasks():
     navbar = generate_navbar('Tasks')
     return render_template('tasklist.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar,
-                           protocols=protocols, tasks=tasks)
+                           tasksumm=tasksumm, protocols=protocols, tasks=tasks)
 
 
 @app.route('/project/<string:pname>')
