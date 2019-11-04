@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.0'
+__version__ = '0.14.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -541,7 +541,7 @@ def generate_project(protocol, result):
     ipd['protocol'] = protocol
     # Is this a valid protocol?
     if not valid_cv_term('protocol', protocol):
-        raise InvalidUsage("%s in not a valid protocol" % protocol)
+        raise InvalidUsage("%s is not a valid protocol" % protocol)
     # Instattiate project
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
@@ -670,6 +670,29 @@ def change_project_active(result, name_or_id, flag):
         raise InvalidUsage("Project %s does not exist" % name_or_id, 404)
     stmt = "UPDATE project SET active=%s WHERE %s='%s'"
     bind = (flag, column, name_or_id)
+    try:
+        g.c.execute(stmt % bind)
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    result['rest']['row_count'] = g.c.rowcount
+    result['rest']['sql_statement'] = g.c.mogrify(stmt, bind)
+    g.db.commit()
+
+
+def change_project_priority(result, name_or_id, priority):
+    ''' Change a project's priority
+        Keyword arguments:
+          result: result dictionary
+          name: project name or ID
+          priority: priority
+    '''
+    column = 'id' if name_or_id.isdigit() else 'name'
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to reprioritize projects")
+    if not get_project_by_name_or_id(name_or_id):
+        raise InvalidUsage("Project %s does not exist" % name_or_id, 404)
+    stmt = "UPDATE project SET priority=%s WHERE %s='%s'"
+    bind = (priority, column, name_or_id)
     try:
         g.c.execute(stmt % bind)
     except Exception as err:
@@ -1359,7 +1382,7 @@ def start_task(ipd, result):
     if 'disposition' in ipd:
         disposition = ipd['disposition']
         if not valid_cv_term('disposition', disposition):
-            raise InvalidUsage("%s in not a valid disposition" % disposition)
+            raise InvalidUsage("%s is not a valid disposition" % disposition)
     try:
         bind = (disposition, result['rest']['user'], ipd['id'],)
         g.c.execute(WRITE['START_TASK'], bind)
@@ -1409,7 +1432,7 @@ def complete_task(ipd, result):
     if 'disposition' in ipd:
         disposition = ipd['disposition']
         if not valid_cv_term('disposition', disposition):
-            raise InvalidUsage("%s in not a valid disposition" % disposition)
+            raise InvalidUsage("%s is not a valid disposition" % disposition)
     try:
         bind = (end_time, disposition, duration, working, ipd['id'],)
         g.c.execute(WRITE['COMPLETE_TASK'], bind)
@@ -2232,6 +2255,21 @@ def show_project(pname):
             <button type="button" class="btn btn-success btn-sm" onclick='modify_project(%s,"activated");'>Activate project</button>
             '''
         controls = controls % (project['id'])
+        controls += '''
+        <div class="rounded" style='width: 320px;border: 1px solid #c3c;'>Set new priority: 
+        <input id="slider" width="300" value="%s"  onchange="reprioritize_project('%s');"/><span style="font-size:14pt; color:#fff;" id="priority"></span> (1-50; 1=highest)
+        </div>
+        <script>
+          $('#slider').slider({
+            uiLibrary: 'bootstrap4',
+            min: 1, max: 50, value: %s,
+            slide: function (e, value) {
+              document.getElementById('priority').innerText = value;
+            }
+          });
+        </script>
+        '''
+        controls = controls % (project['priority'], project['name'], project['priority'])
     # Assigned tasks
     try:
         g.c.execute(READ['PROJECTA'] % (pname,))
@@ -3351,6 +3389,45 @@ def deactivate_project(name):
     '''
     result = initialize_result()
     change_project_active(result, name, 0)
+    return generate_response(result)
+
+
+@app.route('/project/reprioritize', methods=['OPTIONS', 'POST'])
+def reprioritize_project():
+    '''
+    Reprioritize a project
+    Set a project's active flag to False.
+    ---
+    tags:
+      - Project
+    parameters:
+      - in: query
+        name: project_name (or ID for an existing project)
+        schema:
+          type: string
+        required: true
+        description: project name
+      - in: query
+        name: priority
+        schema:
+          type: integer
+        required: false
+        description: project priority (defaults to 5)
+    '''
+    result = initialize_result()
+    ipd = receive_payload(result)
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to reprioritize projects")
+    project = get_project_by_name_or_id(ipd['project_name'])
+    if not project:
+        raise InvalidUsage("Project %s doesn't exist" % (ipd['project_name']))
+    try:
+        pnum = int(ipd['priority'])
+    except Exception as err:
+        temp = "{2}: An exception of type {0} occurred. Arguments:\n{1!r}"
+        mess = temp.format(type(err).__name__, err.args, inspect.stack()[0][3])
+        raise InvalidUsage(mess, 400)
+    change_project_priority(result, project['name'], pnum)
     return generate_response(result)
 
 

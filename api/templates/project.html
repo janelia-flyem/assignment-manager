@@ -1,9 +1,14 @@
 {% extends "base.html" %}
+{% block css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
+<link href="https://unpkg.com/gijgo@1.9.13/css/gijgo.min.css" rel="stylesheet" type="text/css" />
+{% endblock %}
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="#">Project</a></li>
 {% endblock %}
 {% block script %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
+<script src="https://unpkg.com/gijgo@1.9.13/js/gijgo.min.js" type="text/javascript"></script>
 <script>
 function modify_project(proj,operation) {
   url = '/project/'
@@ -35,10 +40,32 @@ function modify_project(proj,operation) {
       }
   });
 }
+function reprioritize_project(proj) {
+  url = '/project/reprioritize'
+  array = {"project_name": proj,
+           "priority": $('#priority').text()};
+  token = $.cookie('assignment-manager-token')
+  $.ajax({
+      url: url,
+      headers: {"Authorization": 'Bearer ' + token },
+      type: 'POST',
+      dataType: 'json',
+      data: JSON.stringify(array),
+      contentType:'application/json',
+      success: function(result) {
+        window.location.href = window.location.pathname 
+      },
+      error: function (xhr, ajaxOptions, thrownError) {
+        if (xhr.status == 401) {
+          alert("You are not authenticated");
+        }
+        else {
+          alert(xhr.status + ': ' + thrownError + "\n" + xhr.responseText);
+        }
+      }
+  });
+}
 </script>
-{% endblock %}
-{% block css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
 {% endblock %}
 {% block onload %}
 onload="tableInitialize();"
