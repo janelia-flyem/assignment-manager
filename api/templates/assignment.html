@@ -1,7 +1,4 @@
 {% extends "base.html" %}
-{% block breadcrumbs %}
-<li class="breadcrumb-item"><a href="#">Assignment</a></li>
-{% endblock %}
 {% block script %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
 <script>
@@ -78,9 +75,6 @@ function modify_assignment(assn,operation) {
   });
 }
 </script>
-{% endblock %}
-{% block css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
 {% endblock %}
 {% block onload %}
 onload="tableInitialize();"

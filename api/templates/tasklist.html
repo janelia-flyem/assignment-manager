@@ -1,7 +1,4 @@
 {% extends "base.html" %}
-{% block css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/summary.css') }}">
-{% endblock %}
 {% block script %}
 <script>
 function show_all() {
@@ -46,7 +43,7 @@ onload="tableInitialize();"
   <button id="hn" type="button" class="btn btn-primary btn-sm" onclick='$(".notstarted").hide(); $("#hn").attr("disabled", true);'>Hide not started</button>
   Select protocol:
   <select id="protocol" onchange='select_protocol(this);'>
-    <option value="all" SELECTED>All protocols</a>
+    <option value="all" SELECTED>All protocols</option>
     {% for pro in protocols %}
         <option value="{{pro}}">{{protocols[pro]}}</option>"
     {% endfor %}

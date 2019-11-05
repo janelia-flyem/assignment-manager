@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.1'
+__version__ = '0.14.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1677,7 +1677,27 @@ def generate_navbar(active):
         <ul class="navbar-nav mr-auto">
     '''
     for heading in ['Projects', 'Assignments', 'Tasks', 'Protocols', 'Users']:
-        if heading == 'Protocols':
+        if heading == 'Assignments':
+            nav += '<li class="nav-item dropdown active">' \
+                if heading == active else '<li class="nav-item">'
+            nav += '<a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" ' \
+                   + 'role="button" data-toggle="dropdown" aria-haspopup="true" ' \
+                   + 'aria-expanded="false">Assignments</a><div class="dropdown-menu" '\
+                   + 'aria-labelledby="navbarDropdown">'
+            nav += '<a class="dropdown-item" href="/assignmentlist">Show</a>' \
+                   + '<a class="dropdown-item" href="/assigntasks">Generate</a>'
+            nav += '</div></li>'
+        elif heading == 'Tasks':
+            nav += '<li class="nav-item dropdown active">' \
+                if heading == active else '<li class="nav-item">'
+            nav += '<a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" ' \
+                   + 'role="button" data-toggle="dropdown" aria-haspopup="true" ' \
+                   + 'aria-expanded="false">Tasks</a><div class="dropdown-menu" '\
+                   + 'aria-labelledby="navbarDropdown">'
+            nav += '<a class="dropdown-item" href="/tasklist">Show</a>' \
+                   + '<a class="dropdown-item" href="/search">Search</a>'
+            nav += '</div></li>'
+        elif heading == 'Protocols':
             nav += '<li class="nav-item dropdown active">' \
                 if heading == active else '<li class="nav-item">'
             nav += '<a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" ' \
@@ -1688,16 +1708,6 @@ def generate_navbar(active):
                 if subhead in sys.modules:
                     nav += '<a class="dropdown-item" href="/userlist/%s">%s</a>' \
                            % (subhead, app.config['PROTOCOLS'][subhead])
-            nav += '</div></li>'
-        elif heading == 'Assignments':
-            nav += '<li class="nav-item dropdown active">' \
-                if heading == active else '<li class="nav-item">'
-            nav += '<a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" ' \
-                   + 'role="button" data-toggle="dropdown" aria-haspopup="true" ' \
-                   + 'aria-expanded="false">Assignments</a><div class="dropdown-menu" '\
-                   + 'aria-labelledby="navbarDropdown">'
-            nav += '<a class="dropdown-item" href="/assignmentlist">Show</a>' \
-                   + '<a class="dropdown-item" href="/assigntasks">Generate</a>'
             nav += '</div></li>'
         else:
             nav += '<li class="nav-item active">' if heading == active else '<li class="nav-item">'
@@ -2474,6 +2484,18 @@ def assign_to(pname):
     return render_template('assignto.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, project=project['name'],
                            proofreaders=proofreaders, num_tasks=projectins.num_tasks)
+
+
+@app.route('/search')
+def show_search_form():
+    ''' Make an assignment for a project
+    '''
+    user, face = check_token()
+    if not user:
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
+    navbar = generate_navbar('Tasks')
+    return render_template('search.html', urlroot=request.url_root, face=face,
+                           dataset=app.config['DATASET'], navbar=navbar)
 
 
 # *****************************************************************************
@@ -4660,6 +4682,73 @@ def complete_task_by_id(task_id): # pragma: no cover
     ipd = receive_payload(result)
     ipd['id'] = task_id
     complete_task(ipd, result)
+    return generate_response(result)
+
+
+@app.route('/run_search', methods=['OPTIONS', 'POST'])
+def run_search():
+    '''
+    Search tasks
+    Search tasks by key text.
+    ---
+    tags:
+      - Task
+    parameters:
+      - in: query
+        name: key_type
+        schema:
+          type: string
+        required: true
+        description: key type (display term)
+      - in: query
+        name: key_text
+        schema:
+          type: string
+        required: true
+        description: key text
+    responses:
+      200:
+          description: Task table
+      500:
+          description: Error
+    '''
+    result = initialize_result()
+    ipd = receive_payload(result)
+    check_missing_parms(ipd, ['key_type', 'key_text'])
+    prefix = 'SELECT id,protocol,project,assignment,key_type_display,key_text ' \
+             + 'FROM task_vw WHERE key_text=%s'
+    if ipd['key_type'] == 'body':
+        sql = prefix + " OR key_text LIKE %s OR key_text LIKE %s"
+        bind = (ipd['key_text'], ipd['key_text'] + '_%', '%_' + ipd['key_text'])
+    elif ipd['key_type'] == 'xyz':
+        sql = prefix
+        bind = (ipd['key_text'])
+    sql += ' ORDER BY 2,3,4,6'
+    result['data'] = 'No tasks found'
+    try:
+        g.c.execute(sql, bind)
+        rows = g.c.fetchall()
+        result['rest']['sql_statement'] = g.c.mogrify(sql, bind)
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if rows:
+        result['data'] = '''
+        <table id="tasks" class="tablesorter standard">
+        <thead>
+        <tr><th>Task ID</th><th>Protocol</th><th>Project</th><th>Assignment</th><th>Key type</th><th>Key text</th></tr>
+        </thead>
+        <tbody>
+        '''
+        template = "<tr>" + ''.join('<td style="text-align: center">%s</td>') * 1 \
+                   + ''.join('<td>%s</td>')*5 + "</tr>"
+        for row in rows:
+            tlink = '<a href="/task/%s">%s</a>' % tuple([row['id']] * 2)
+            plink = '<a href="/project/%s">%s</a>' % tuple([row['project']] * 2)
+            alink = '<a href="/assignment/%s">%s</a>' % tuple([row['assignment']] * 2) \
+                    if row['assignment'] else ''
+            result['data'] += template % (tlink, row['protocol'], plink, alink,
+                                          row['key_type_display'], row['key_text'])
+        result['data'] += '</tbody></table>'
     return generate_response(result)
 
 
