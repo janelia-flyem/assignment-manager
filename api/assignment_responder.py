@@ -4044,7 +4044,7 @@ def return_assignment_json(aname):
     if error:
         raise InvalidUsage(error, 400)
     if project['protocol'] == 'cell_type_validation':
-        result.update({"file type": "Neu3",
+        result.update({"file type": "Neu3 task list",
                        "file version": "1",
                        "ID": "1"})
     return generate_response(result)
