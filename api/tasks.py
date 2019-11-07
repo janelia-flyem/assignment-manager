@@ -1,7 +1,6 @@
 from datetime import datetime
 from flask import g
-import assignment_utilities
-from assignment_utilities import InvalidUsage, sql_error, update_property
+from assignment_utilities import InvalidUsage, sql_error
 
 WRITE = {
     'INSERT_TASK': "INSERT INTO task (name,project_id,assignment_id,key_type_id,key_text,"
