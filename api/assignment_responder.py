@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.2'
+__version__ = '0.14.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -586,7 +586,7 @@ def get_project_properties(project):
     active = "<span style='color:%s'>%s</span>" \
              % (('lime', 'YES') if project['active'] else ('red', 'NO'))
     pprops.append(['Active:', active])
-    pprops.append(['Protocol:', project['protocol']])
+    pprops.append(['Protocol:', app.config['PROTOCOLS'][project['protocol']]])
     pprops.append(['Priority:', project['priority']])
     try:
         g.c.execute("SELECT type_display,value FROM project_property_vw WHERE name=%s"
@@ -910,7 +910,7 @@ def protocol_select_list(result):
     for row in result['temp']:
         if bool(row['cv_term'] in sys.modules):
             protocols += '<option value="%s" SELECTED>%s</option>' \
-                % (row['cv_term'], row['cv_term'])
+                % (row['cv_term'], app.config['PROTOCOLS'][row['cv_term']])
     return protocols
 
 
@@ -1252,10 +1252,11 @@ def build_assignment_table(user, ipd): # pylint: disable=R0914
             #rclass += ' ' + name
             proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             assn = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
-            assignments += template % (rclass, row['proofreader'], proj, row['protocol'],
+            this_protocol = app.config['PROTOCOLS'][row['protocol']]
+            assignments += template % (rclass, row['proofreader'], proj, this_protocol,
                                        assn, row['start_date'], row['completion_date'],
                                        row['task_disposition'], row['tasks'])
-            fileoutput += ftemplate % (row['proofreader'], row['project'], row['protocol'],
+            fileoutput += ftemplate % (row['proofreader'], row['project'], this_protocol,
                                        row['assignment'], row['start_date'], row['completion_date'],
                                        row['task_disposition'], row['tasks'])
         assignments += "</tbody></table>"
@@ -1870,6 +1871,17 @@ def user_list():
         link = '<a href="/user/%s">%s</a>' % (row['name'], row['name'])
         if not row['permissions']:
             row['permissions'] = '-'
+        else:
+            showarr = []
+            for perm in row['permissions'].split(','):
+                if perm in app.config['PROTOCOLS']:
+                    this_perm = '<span style="color:cyan">%s</span>' % app.config['PROTOCOLS'][perm]
+                elif perm in ['admin', 'super', 'view']:
+                    this_perm = '<span style="color:orange">%s</span>' % perm
+                else:
+                    this_perm = '<span style="color:gold">%s</span>' % perm
+                showarr.append(this_perm)
+            row['permissions'] = ', '.join(showarr)
         urows += template % (rclass, ', '.join([row['last'], row['first']]), link,
                              row['janelia_id'], row['email'], row['organization'],
                              row['permissions'])
@@ -1944,7 +1956,8 @@ def user_protocol_list(protocol):
     navbar = generate_navbar('Protocols')
     return render_template('userplist.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar,
-                           protocol=protocol, organizations=organizations, userrows=urows)
+                           protocol=app.config['PROTOCOLS'][protocol],
+                           organizations=organizations, userrows=urows)
 
 
 @app.route('/user/<string:uname>')
@@ -2059,10 +2072,11 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
             proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             active = "<span style='color:%s'>%s</span>" \
                      % (('lime', 'YES') if row['active'] else ('red', 'NO'))
-            projects += template % (rclass, row['protocol'], row['project_group'], proj,
+            this_protocol = app.config['PROTOCOLS'][row['protocol']]
+            projects += template % (rclass, this_protocol, row['project_group'], proj,
                                     row['num'], row['disposition'], row['priority'],
                                     row['create_date'], active)
-            fileoutput += ftemplate % (row['protocol'], row['project_group'], row['project'],
+            fileoutput += ftemplate % (this_protocol, row['project_group'], row['project'],
                                        row['num'], row['disposition'], row['priority'],
                                        row['create_date'], row['active'])
         projects += "</tbody></table>"
@@ -2081,7 +2095,8 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
         '''
         for row in result['temp']:
             if bool(row['cv_term'] in sys.modules):
-                newproject += '<option>%s</option>' % row['cv_term']
+                newproject += '<option value="%s">%s</option>' % (row['cv_term'], \
+                               app.config['PROTOCOLS'][row['cv_term']])
         newproject += '</select><hr style="border: 1px solid gray">'
     if not token:
         token = ''
@@ -2149,11 +2164,12 @@ def assign_tasks(): # pylint: disable=R0914
             button = '' if not row['active'] else \
                         '<a class="btn btn-success btn-tiny" style="color:#fff" href="' \
                         + '/assignto/' + row['project'] + '" role="button">Create</a>'
-            unassigned += template % (row['protocol'], row['project_group'],
+            this_protocol = app.config['PROTOCOLS'][row['protocol']]
+            unassigned += template % (this_protocol, row['project_group'],
                                       ('<a href="/project/%s">%s</a>' % (row['project'], \
                                        row['project'])),
                                       row['num'], row['priority'], active, button)
-            fileoutput += ftemplate % (row['protocol'], row['project_group'], row['project'],
+            fileoutput += ftemplate % (this_protocol, row['project_group'], row['project'],
                                        row['num'], row['priority'], row['active'], '-')
         unassigned += "</tbody></table>"
         downloadable = create_downloadable('unassigned', header, ftemplate, fileoutput)
@@ -2387,7 +2403,7 @@ def show_task(task_id):
     task_id = task['id']
     tprops = []
     tprops.append(['Project:', task['project']])
-    tprops.append(['Protocol:', task['protocol']])
+    tprops.append(['Protocol:', app.config['PROTOCOLS'][task['protocol']]])
     tprops.append(['Assignment:', task['assignment']])
     tprops.append([task['key_type_display'] + ':', task['key_text']])
     tprops.append(['Create date:', task['create_date']])
@@ -2446,8 +2462,8 @@ def project_create(protocol):
     navbar = generate_navbar('Projects')
     return render_template('newproject.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, protocol=protocol,
-                           required=required, optionaljs=optionaljs, optional=optional,
-                           filt=filt, filtjs=filtjs)
+                           display_protocol=app.config['PROTOCOLS'][protocol], required=required,
+                           optionaljs=optionaljs, optional=optional, filt=filt, filtjs=filtjs)
 
 
 @app.route('/assignto/<string:pname>')
@@ -4746,8 +4762,8 @@ def run_search():
             plink = '<a href="/project/%s">%s</a>' % tuple([row['project']] * 2)
             alink = '<a href="/assignment/%s">%s</a>' % tuple([row['assignment']] * 2) \
                     if row['assignment'] else ''
-            result['data'] += template % (tlink, row['protocol'], plink, alink,
-                                          row['key_type_display'], row['key_text'])
+            result['data'] += template % (tlink, app.config['PROTOCOLS'][row['protocol']],
+                                          plink, alink, row['key_type_display'], row['key_text'])
         result['data'] += '</tbody></table>'
     return generate_response(result)
 
