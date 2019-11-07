@@ -1477,8 +1477,7 @@ def return_tasks_json(assignment, result):
           assignment: assignment name
           result: result dictionary
     '''
-    result['data'] = dict()
-    result['data']['task list'] = list()
+    result['task list'] = list()
     sql = 'SELECT t.id AS task_id,type,value,key_type,key_text FROM task_vw t ' \
           + 'LEFT OUTER JOIN task_property_vw tp ON (t.id=tp.task_id) WHERE ' \
           + 't.assignment=%s'
@@ -1493,7 +1492,7 @@ def return_tasks_json(assignment, result):
     for tp in taskprops:
         if this_task != tp['task_id']:
             if this_task:
-                result['data']['task list'].append(task)
+                result['task list'].append(task)
             this_task = tp['task_id']
             task = {"assignment_manager_task_id": this_task,
                     tp['key_type']: tp['key_text']}
@@ -1501,7 +1500,7 @@ def return_tasks_json(assignment, result):
         if tp['type']:
             task[tp['type']] = tp['value']
     if this_task:
-        result['data']['task list'].append(task)
+        result['task list'].append(task)
     result['rest']['row_count'] = task_count
     return None
 
@@ -4045,9 +4044,9 @@ def return_assignment_json(aname):
     if error:
         raise InvalidUsage(error, 400)
     if project['protocol'] == 'cell_type_validation':
-        result['data']['file type'] = 'Neu3'
-        result['data']['file version'] = '1'
-        result['data']['ID'] = '1'
+        result.update({"file type": "Neu3",
+                       "file version": "1",
+                       "ID": "1"})
     return generate_response(result)
 
 
