@@ -1498,7 +1498,10 @@ def return_tasks_json(assignment, result):
                     tp['key_type']: tp['key_text']}
             task_count += 1
         if tp['type']:
-            task[tp['type']] = tp['value']
+            if tp['type'] in ['body ID A', 'body ID B']:
+                task[tp['type']] = int(tp['value'])
+            else:
+                task[tp['type']] = tp['value']
     if this_task:
         result['task list'].append(task)
     result['rest']['row_count'] = task_count
