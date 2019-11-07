@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.3'
+__version__ = '0.14.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1231,31 +1231,29 @@ def build_assignment_table(user, ipd): # pylint: disable=R0914
                                title='SQL error', message=sql_error(err))
     if rows:
         header = ['Proofreader', 'Project', 'Protocol', 'Assignment', 'Started', 'Completed',
-                  'Task disposition', 'Task count']
+                  'Task disposition', 'Task count', 'Export']
         assignments = '''
         <table id="assignments" class="tablesorter standard">
         <tr><th>
         '''
         assignments += '</th><th>'.join(header) + '</th></tr></thead><tbody>'
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*6 \
-                   + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+                   + ''.join('<td style="text-align: center">%s</td>')*3 + "</tr>"
+        del header[-1]
         fileoutput = ''
         ftemplate = "\t".join(["%s"]*8) + "\n"
         for row in rows:
             rclass = 'complete' if row['task_disposition'] == 'Complete' else 'open'
             if not row['task_disposition']:
                 rclass = 'notstarted'
-            #name = re.sub('[^0-9a-zA-Z]+', '_', row['proofreader'])
-            #rclass += ' ' + name
-            #proofreaders[name] = row['proofreader']
-            #name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
-            #rclass += ' ' + name
             proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             assn = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
             this_protocol = app.config['PROTOCOLS'][row['protocol']]
+            link = '<a class="text-info" href="/assignment/json/%s" ' \
+                   % (row['assignment']) + '>JSON</a>'
             assignments += template % (rclass, row['proofreader'], proj, this_protocol,
                                        assn, row['start_date'], row['completion_date'],
-                                       row['task_disposition'], row['tasks'])
+                                       row['task_disposition'], row['tasks'], link)
             fileoutput += ftemplate % (row['proofreader'], row['project'], this_protocol,
                                        row['assignment'], row['start_date'], row['completion_date'],
                                        row['task_disposition'], row['tasks'])
