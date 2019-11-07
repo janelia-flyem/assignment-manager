@@ -4049,6 +4049,7 @@ def return_assignment_json(aname):
     if project['protocol'] == 'cell_type_validation':
         result['data']['file type'] = 'Neu3'
         result['data']['file version'] = '1'
+        result['data']['ID'] = '1'
     return generate_response(result)
 
 
