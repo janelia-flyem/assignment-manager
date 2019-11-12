@@ -1352,8 +1352,8 @@ def check_task(task, ipd, result):
         raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
     if not check_permission(result['rest']['user'], 'admin'):
         if task['user'] != result['rest']['user']:
-            raise InvalidUsage("Task is assigned to %s, not %s"
-                               % (task['user'], result['rest']['user']))
+            raise InvalidUsage("Task %s is assigned to %s, not %s"
+                               % (task['id'], task['user'], result['rest']['user']))
 
 
 def start_task(ipd, result):
@@ -4314,10 +4314,12 @@ def closeout_assignment_by_id(assignment_id): # pragma: no cover
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     result2 = {"rest": {"user": ipd['user'] if 'user' in ipd else result['rest']['user']}}
+    print("Starting tasks for assignment %s" % (assignment['name']))
     for task in tasks:
         ipd2 = {"id": task['id']}
         start_task(ipd2, result)
     sleep(2)
+    print("Completing tasks for assignment %s" % (assignment['name']))
     for task in tasks:
         ipd2 = {"id": task['id']}
         complete_task(ipd2, result2)
