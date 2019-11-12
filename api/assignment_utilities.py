@@ -129,6 +129,7 @@ def get_assignment_by_name_or_id(aid):
         Keyword arguments:
           aid: assignment name or ID
     '''
+    aid = str(aid)
     stmt = "SELECT * FROM assignment_vw WHERE id=%s" if aid.isdigit() \
            else "SELECT * FROM assignment_vw WHERE name=%s"
     try:

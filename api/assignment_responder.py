@@ -10,7 +10,7 @@ import os
 import platform
 import re
 import sys
-from time import time
+from time import time, sleep
 import elasticsearch
 from flask import Flask, g, make_response, redirect, render_template, request, send_file, jsonify
 from flask.json import JSONEncoder
@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.5'
+__version__ = '0.14.6'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1350,9 +1350,10 @@ def check_task(task, ipd, result):
     '''
     if not task:
         raise InvalidUsage("Task %s does not exist" % ipd['id'], 404)
-    if task['user'] != result['rest']['user']:
-        raise InvalidUsage("Task is assigned to %s, not %s"
-                           % (task['user'], result['rest']['user']))
+    if not check_permission(result['rest']['user'], 'admin'):
+        if task['user'] != result['rest']['user']:
+            raise InvalidUsage("Task is assigned to %s, not %s"
+                               % (task['user'], result['rest']['user']))
 
 
 def start_task(ipd, result):
@@ -1402,7 +1403,6 @@ def start_task(ipd, result):
     if projectins.unit == 'body_id':
         # Add a point
         add_point(ipd, task['key_text'], result)
-    g.db.commit()
 
 
 def complete_task(ipd, result):
@@ -1451,7 +1451,6 @@ def complete_task(ipd, result):
     # If this is the last task, complete the assignment
     assignment = get_assignment_by_name_or_id(task['assignment_id'])
     complete_assignment(ipd, result, assignment, True)
-    g.db.commit()
 
 
 def get_task_properties(result):
@@ -4268,6 +4267,64 @@ def reassign_assignment_by_id(assignment_id): # pragma: no cover
     return generate_response(result)
 
 
+@app.route('/assignment/<string:assignment_id>/closeout', methods=['OPTIONS', 'POST'])
+def closeout_assignment_by_id(assignment_id): # pragma: no cover
+    '''
+    Start then complete all tasks for an assignment, then complete the assignment
+    ---
+    tags:
+      - Assignment
+    parameters:
+      - in: query
+        name: assignment_id
+        schema:
+          type: string
+        required: true
+        description: assignment ID
+      - in: query
+        name: note
+        schema:
+          type: string
+        required: false
+        description: note
+    responses:
+      200:
+          description: Assignment closed out
+      400:
+          description: Assignment not closed out
+    '''
+    result = initialize_result()
+    ipd = receive_payload(result)
+    if not check_permission(result['rest']['user'], 'admin'):
+        raise InvalidUsage("You don't have permission to close out assignments")
+    ipd['id'] = assignment_id
+    assignment = get_assignment_by_name_or_id(ipd['id'])
+    if not assignment:
+        raise InvalidUsage("Assignment %s does not exist" % ipd['id'], 404)
+    assignment_id = ipd['id'] = assignment['id']
+    if not assignment['start_date']:
+        raise InvalidUsage("Assignment %s was not started" % ipd['id'])
+    if assignment['completion_date']:
+        raise InvalidUsage("Assignment %s was already completed" % ipd['id'])
+    project = get_project_by_name_or_id(assignment['project'])
+    select_user(project, ipd, result)
+    try:
+        g.c.execute("SELECT id FROM task WHERE assignment_id=%s ORDER BY 1", (assignment_id))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    result2 = {"rest": {"user": ipd['user'] if 'user' in ipd else result['rest']['user']}}
+    for task in tasks:
+        ipd2 = {"id": task['id']}
+        start_task(ipd2, result)
+    sleep(2)
+    for task in tasks:
+        ipd2 = {"id": task['id']}
+        complete_task(ipd2, result2)
+    g.db.commit()
+    return generate_response(result)
+
+
 @app.route('/assignment/<string:assignment_id>', methods=['OPTIONS', 'DELETE'])
 def delete_assignment(assignment_id):
     '''
@@ -4655,6 +4712,7 @@ def start_task_by_id(task_id): # pragma: no cover
     ipd = receive_payload(result)
     ipd['id'] = task_id
     start_task(ipd, result)
+    g.db.commit()
     return generate_response(result)
 
 
@@ -4703,6 +4761,7 @@ def complete_task_by_id(task_id): # pragma: no cover
     ipd = receive_payload(result)
     ipd['id'] = task_id
     complete_task(ipd, result)
+    g.db.commit()
     return generate_response(result)
 
 
