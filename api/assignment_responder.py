@@ -4313,7 +4313,7 @@ def closeout_assignment_by_id(assignment_id): # pragma: no cover
         tasks = g.c.fetchall()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    result2 = {"rest": {"user": ipd['user'] if 'user' in ipd else result['rest']['user']}}
+    #result2 = {"rest": {"user": ipd['user'] if 'user' in ipd else result['rest']['user']}}
     print("Starting tasks for assignment %s" % (assignment['name']))
     for task in tasks:
         ipd2 = {"id": task['id']}
@@ -4322,7 +4322,7 @@ def closeout_assignment_by_id(assignment_id): # pragma: no cover
     print("Completing tasks for assignment %s" % (assignment['name']))
     for task in tasks:
         ipd2 = {"id": task['id']}
-        complete_task(ipd2, result2)
+        complete_task(ipd2, result)
     g.db.commit()
     return generate_response(result)
 
