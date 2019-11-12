@@ -25,7 +25,7 @@ import requests
 
 import assignment_utilities
 from assignment_utilities import (InvalidUsage, call_responder, check_permission,
-                                  generate_sql, get_assignment_by_id, get_task_by_id,
+                                  generate_sql, get_assignment_by_name_or_id, get_task_by_id,
                                   get_tasks_by_assignment_id, get_workday, neuprint_custom_query,
                                   random_string, sql_error, update_property, validate_user,
                                   working_duration)
@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.4'
+__version__ = '0.14.5'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -641,7 +641,7 @@ def get_assigned_tasks(tasks, user):
 
 
 def get_project_by_name_or_id(proj):
-    ''' Get a project by ID
+    ''' Get a project by name or ID
         Keyword arguments:
           proj: project name or ID
     '''
@@ -1089,7 +1089,7 @@ def generate_assignment(ipd, result):
         raise InvalidUsage("Could not assign tasks for project %s" % ipd['project_name'], 500)
     result['rest']['assigned_tasks'] = updated
     if 'start' in ipd and ipd['start']:
-        ipd['id'] = result['rest']['inserted_id']
+        ipd['id'] = str(result['rest']['inserted_id'])
         start_assignment(ipd, result)
     g.db.commit()
 
@@ -1100,9 +1100,10 @@ def start_assignment(ipd, result):
           ipd: request payload
           result: result dictionary
     '''
-    assignment = get_assignment_by_id(ipd['id'])
+    assignment = get_assignment_by_name_or_id(ipd['id'])
     if not assignment:
         raise InvalidUsage("Assignment %s does not exist" % ipd['id'], 404)
+    ipd['id'] = assignment['id']
     if assignment['start_date']:
         raise InvalidUsage("Assignment %s was already started" % ipd['id'])
     # Update the assignment
@@ -1373,7 +1374,7 @@ def start_task(ipd, result):
         if not task['assignment_id']:
             raise InvalidUsage("Task %s is not assigned" % ipd['id'])
         # Check the asignment
-        assignment = get_assignment_by_id(task['assignment_id'])
+        assignment = get_assignment_by_name_or_id(task['assignment_id'])
         if not assignment['start_date']:
             start_assignment({"id": task['assignment_id']}, result)
     # Update the task
@@ -1448,7 +1449,7 @@ def complete_task(ipd, result):
             update_property(ipd['id'], 'task', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
     # If this is the last task, complete the assignment
-    assignment = get_assignment_by_id(task['assignment_id'])
+    assignment = get_assignment_by_name_or_id(task['assignment_id'])
     complete_assignment(ipd, result, assignment, True)
     g.db.commit()
 
@@ -4081,7 +4082,7 @@ def start_assignment_by_id(assignment_id): # pragma: no cover
     '''
     result = initialize_result()
     ipd = receive_payload(result)
-    ipd['id'] = assignment_id
+    ipd['id'] = str(assignment_id)
     start_assignment(ipd, result)
     g.db.commit()
     return generate_response(result)
@@ -4116,9 +4117,10 @@ def complete_assignment_by_id(assignment_id): # pragma: no cover
     result = initialize_result()
     ipd = receive_payload(result)
     ipd['id'] = assignment_id
-    assignment = get_assignment_by_id(ipd['id'])
+    assignment = get_assignment_by_name_or_id(ipd['id'])
     if not assignment:
         raise InvalidUsage("Assignment %s does not exist" % ipd['id'], 404)
+    assignment_id = ipd['id'] = assignment['id']
     if not assignment['start_date']:
         raise InvalidUsage("Assignment %s was not started" % ipd['id'])
     if assignment['completion_date']:
@@ -4157,9 +4159,10 @@ def reset_assignment_by_id(assignment_id): # pragma: no cover
     '''
     result = initialize_result()
     ipd = receive_payload(result)
-    assignment = get_assignment_by_id(assignment_id)
+    assignment = get_assignment_by_name_or_id(assignment_id)
     if not assignment:
         raise InvalidUsage("Assignment %s does not exist" % assignment_id, 404)
+    assignment_id = assignment['id']
     if not assignment['start_date']:
         raise InvalidUsage("Assignment %s was not started" % assignment_id)
     # Look for started tasks
@@ -4288,9 +4291,10 @@ def delete_assignment(assignment_id):
           description: Assignment was not deleted
     '''
     result = initialize_result()
-    assignment = get_assignment_by_id(assignment_id)
+    assignment = get_assignment_by_name_or_id(assignment_id)
     if not assignment:
         raise InvalidUsage("Assignment %s was not found" % assignment_id, 404)
+    assignment_id = assignment['id']
     tasks = get_tasks_by_assignment_id(assignment_id)
     del_assignment = True
     for task in tasks:

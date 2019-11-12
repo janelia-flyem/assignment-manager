@@ -47,7 +47,7 @@ USERS = {"alvaradoc": "alvaradocx4",
 PRIVILEGED = ['neacee', 'rivlinp']
 PERMISSIONS = ['admin', 'Connectome Annotation Team', 'FlyEM Project and Software',
                'FlyEM Proofreaders', 'cell_type_validation', 'cleave',
-               'connection_validation', 'orphan_link', 'to_do']
+               'connection_validation', 'orphan_link', 'todo']
 
 def call_responder(url, endpoint, payload=''):
     ''' Call a responder

@@ -124,13 +124,15 @@ def generate_sql(request, result, sql, query=False):
     return sql, bind, idcolumn
 
 
-def get_assignment_by_id(aid):
-    ''' Get an assignment by ID
+def get_assignment_by_name_or_id(aid):
+    ''' Get an assignment by name or ID
         Keyword arguments:
-          aid: assignment ID
+          aid: assignment name or ID
     '''
+    stmt = "SELECT * FROM assignment_vw WHERE id=%s" if aid.isdigit() \
+           else "SELECT * FROM assignment_vw WHERE name=%s"
     try:
-        g.c.execute("SELECT * FROM assignment_vw WHERE id=%s", (aid))
+        g.c.execute(stmt, (aid))
         assignment = g.c.fetchone()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
