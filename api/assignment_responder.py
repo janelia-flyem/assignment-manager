@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.6'
+__version__ = '0.14.7'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1356,7 +1356,7 @@ def check_task(task, ipd, result):
                                % (task['id'], task['user'], result['rest']['user']))
 
 
-def start_task(ipd, result):
+def start_task(ipd, result, this_user=None):
     ''' Start a task.
         Keyword arguments:
           ipd: request payload
@@ -1384,14 +1384,16 @@ def start_task(ipd, result):
         disposition = ipd['disposition']
         if not valid_cv_term('disposition', disposition):
             raise InvalidUsage("%s is not a valid disposition" % disposition)
+    if not this_user:
+        this_user = task['user']
     try:
-        bind = (disposition, result['rest']['user'], ipd['id'],)
+        bind = (disposition, this_user, ipd['id'],)
         g.c.execute(WRITE['START_TASK'], bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['sql_statement'] = g.c.mogrify(WRITE['START_TASK'], bind)
         publish_cdc(result, {"table": "task", "operation": "update"})
         bind = (ipd['id'], task['project_id'], task['assignment_id'], task['key_type'],
-                task['key_text'], 'In progress', None, task['user'])
+                task['key_text'], 'In progress', None, this_user)
         g.c.execute(WRITE['TASK_AUDIT'], bind)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
@@ -4313,7 +4315,6 @@ def closeout_assignment_by_id(assignment_id): # pragma: no cover
         tasks = g.c.fetchall()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    #result2 = {"rest": {"user": ipd['user'] if 'user' in ipd else result['rest']['user']}}
     print("Starting tasks for assignment %s" % (assignment['name']))
     for task in tasks:
         ipd2 = {"id": task['id']}
@@ -4713,7 +4714,7 @@ def start_task_by_id(task_id): # pragma: no cover
     result = initialize_result()
     ipd = receive_payload(result)
     ipd['id'] = task_id
-    start_task(ipd, result)
+    start_task(ipd, result, result['rest']['user'])
     g.db.commit()
     return generate_response(result)
 
