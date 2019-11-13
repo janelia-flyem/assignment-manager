@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.8'
+__version__ = '0.14.9'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -4955,11 +4955,34 @@ def get_taskprop_info():
 # *****************************************************************************
 # * User endpoints                                                            *
 # *****************************************************************************
-@app.route('/users', methods=['GET'])
+@app.route('/users/columns', methods=['GET'])
 def get_user_columns():
     '''
+    Get columns from user_vw table
+    Show the columns in the user_vw table, which may be used to filter
+     results for the /users endpoint.
+    ---
+    tags:
+      - User
+    responses:
+      200:
+          description: Columns in user_vw table
+    '''
+    result = initialize_result()
+    show_columns(result, "user_vw")
+    return generate_response(result)
+
+
+@app.route('/users', methods=['GET'])
+def get_users():
+    '''
     Get users
-    Show all users.
+    Show users. The caller can filter on any of
+     the columns in the user_vw table. Inequalities (!=) and
+     some relational operations (&lt;= and &gt;=) are supported. Wildcards are
+     supported (use "*"). The returned list may be ordered by specifying a
+     column with the _sort key. Multiple columns should be separated by a
+     comma.
     ---
     tags:
       - User
