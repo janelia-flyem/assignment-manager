@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.7'
+__version__ = '0.14.8'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1590,6 +1590,18 @@ def get_task_controls(user, task_id, task):
     return controls
 
 
+def neuprint_link(ktype, value):
+    ''' Generate a link to NeuPrint
+        Keyword arguments:
+          ktype: key type
+          value: key value
+        Returns:
+          link
+    '''
+    return '<a href="%s?%s=%s" target="_blank">%s</a>' \
+           % (app.config['NEUPRINT_URL'], ktype, value, value)
+
+
 def get_user_id(user):
     ''' Get a user's ID from the "user" table
         Keyword arguments:
@@ -2407,7 +2419,9 @@ def show_task(task_id):
     tprops.append(['Project:', task['project']])
     tprops.append(['Protocol:', app.config['PROTOCOLS'][task['protocol']]])
     tprops.append(['Assignment:', task['assignment']])
-    tprops.append([task['key_type_display'] + ':', task['key_text']])
+    val = neuprint_link('bodyid', task['key_text']) \
+          if task['key_type_display'] == 'Body ID' else task['key_text']
+    tprops.append([task['key_type_display'] + ':', val])
     tprops.append(['Create date:', task['create_date']])
     tprops.append(['Start date:', task['start_date']])
     tprops.append(['Completion date:', task['completion_date']])
@@ -2423,7 +2437,9 @@ def show_task(task_id):
     for prop in props:
         if not prop['value']:
             continue
-        tprops.append([prop['type_display'], prop['value']])
+        val = neuprint_link('bodyid', prop['value']) \
+              if 'Body ID' in prop['type_display'] else prop['value']
+        tprops.append([prop['type_display'], val])
     # Controls
     try:
         controls = get_task_controls(user, task_id, task)
