@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.14.9'
+__version__ = '0.15.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -855,6 +855,7 @@ def build_protocols_table(calling_user, user):
           user: user instance
     '''
     permissions = user['permissions'].split(',') if user['permissions'] else []
+    # Protocols
     g.c.execute("SELECT cv_term,display_name FROM cv_term_vw WHERE cv='protocol' ORDER BY 1")
     rows = g.c.fetchall()
     parray = []
@@ -885,16 +886,14 @@ def build_protocols_table(calling_user, user):
     ptable += '<table><thead><tr style="color:#069"><th>Permission</th>' \
               + '<th>Enabled</th></tr></thead><tbody>' \
               + ''.join(parray) + '</tbody></table>'
-    for perm in ['admin', 'super', 'view']:
-        if perm in permissions:
-            permissions.remove(perm)
-    if permissions:
-        parray = []
-        for perm in permissions:
-            val = 'checked="checked"'
-            check = '<input type="checkbox" checked="checked" disabled>'
-            parray.append(template % (perm, check))
-        ptable += '<table><thead><tr style="color:#069"><th>Assignments</th>' \
+    # Assignment groups
+    parray = []
+    for perm in app.config['GROUPS']:
+        val = 'checked="checked"' if perm in permissions else ''
+        check = '<input type="checkbox" %s id="%s" onchange="changebox(this);">' \
+                % (val, perm)
+        parray.append(template % (perm, check))
+    ptable += '<table><thead><tr style="color:#069"><th>Assignment groups</th>' \
               + '<th>Enabled</th></tr></thead><tbody>' \
               + ''.join(parray) + '</tbody></table>'
     return ptable
@@ -1890,10 +1889,10 @@ def user_list():
             for perm in row['permissions'].split(','):
                 if perm in app.config['PROTOCOLS']:
                     this_perm = '<span style="color:cyan">%s</span>' % app.config['PROTOCOLS'][perm]
-                elif perm in ['admin', 'super', 'view']:
-                    this_perm = '<span style="color:orange">%s</span>' % perm
-                else:
+                elif perm in app.config['GROUPS']:
                     this_perm = '<span style="color:gold">%s</span>' % perm
+                else:
+                    this_perm = '<span style="color:orange">%s</span>' % perm
                 showarr.append(this_perm)
             row['permissions'] = ', '.join(showarr)
         urows += template % (rclass, ', '.join([row['last'], row['first']]), link,
@@ -2675,7 +2674,7 @@ def get_processlist_info():
     result = initialize_result()
     execute_sql(result, 'SELECT * FROM information_schema.processlist', 'data')
     for row in result['data']:
-        row['HOST'] = 'None' if row['HOST'] is None else row['HOST'].decode("utf-8")
+        row['HOST'] = 'None' if not row['HOST'] else row['HOST'] #.decode("utf-8")
     return generate_response(result)
 
 
