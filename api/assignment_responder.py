@@ -125,7 +125,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.15.0'
+__version__ = '0.15.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1234,6 +1234,7 @@ def build_assignment_table(user, ipd): # pylint: disable=R0914
                   'Task disposition', 'Task count', 'Export']
         assignments = '''
         <table id="assignments" class="tablesorter standard">
+        <thead>
         <tr><th>
         '''
         assignments += '</th><th>'.join(header) + '</th></tr></thead><tbody>'
