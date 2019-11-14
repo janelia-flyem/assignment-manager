@@ -118,6 +118,12 @@ class CustomJSONEncoder(JSONEncoder):
         try:
             if isinstance(obj, datetime):
                 return obj.strftime('%a, %-d %b %Y %H:%M:%S')
+            if isinstance(obj, timedelta):
+                seconds = obj.total_seconds()
+                hours = seconds // 3600
+                minutes = (seconds % 3600) // 60
+                seconds = seconds % 60
+                return "%02d:%02d:%.2f" % (hours, minutes, seconds)
             iterable = iter(obj)
         except TypeError:
             pass
@@ -125,7 +131,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.15.1'
+__version__ = '0.15.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
