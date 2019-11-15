@@ -131,7 +131,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.15.2'
+__version__ = '0.15.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2138,6 +2138,25 @@ def show_assignments(): # pylint: disable=R0914
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     result = initialize_result()
     ipd = receive_payload(result)
+    try:
+        g.c.execute('SELECT protocol,disposition,COUNT(1) AS c FROM assignment_vw GROUP BY 1,2')
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    assignmentsummary = ''
+    if rows:
+        assignmentsummary = '''
+        <h2>Summary</h2>
+        <table id="asumm" class="tablesorter standard">
+        <thead><tr><th>Protocol</th><th>Disposition</th><th>Count</th></tr></thead><tbody>
+        '''
+        template = '<tr><td>%s</td><td>%s</td><td style="text-align: center">%s</td></tr>'
+        for row in rows:
+            row['protocol'] = app.config['PROTOCOLS'][row['protocol']]
+            assignmentsummary += template \
+                                 % tuple([row[x] for x in ['protocol', 'disposition', 'c']])
+        assignmentsummary += '</tbody></table><br>'
     proofreaders, assignments = build_assignment_table(user, ipd)
     if request.method == 'POST':
         return {"assignments": assignments}
@@ -2145,7 +2164,8 @@ def show_assignments(): # pylint: disable=R0914
     navbar = generate_navbar('Assignments')
     response = make_response(render_template('assignmentlist.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
-                                             navbar=navbar, assignments=assignments,
+                                             navbar=navbar, assignmentsummary=assignmentsummary,
+                                             assignments=assignments,
                                              protocols=protocols, proofreaders=proofreaders,))
     return response
 
