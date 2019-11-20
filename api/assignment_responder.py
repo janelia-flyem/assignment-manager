@@ -654,7 +654,7 @@ def get_assigned_tasks(tasks, pid, num_unassigned, user):
         raise InvalidUsage(sql_error(err), 500)
     for disp in atasks:
         disposition_block += '<h3>%s: %d (%.2f%%)</h3>' \
-                             % (('Open' if disp['disposition'] == 'None' else disp['disposition']),
+                             % (('Not started' if not disp['disposition'] else disp['disposition']),
                                 disp['c'], disp['c'] / (num_assigned + num_unassigned) * 100.0)
     return assigned, num_assigned, disposition_block
 
