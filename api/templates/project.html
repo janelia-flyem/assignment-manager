@@ -61,6 +61,14 @@ function reprioritize_project(proj) {
       }
   });
 }
+function show_all() {
+  $(".open").show();
+  $(".complete").show();
+  $(".notstarted").show();
+  $('#hc').removeAttr("disabled");
+  $('#ho').removeAttr("disabled");
+  $('#hn').removeAttr("disabled");
+}
 </script>
 {% endblock %}
 {% block onload %}
@@ -84,5 +92,11 @@ onload="tableInitialize();"
   <h3>Assigned tasks: {{ num_assigned }}</h3>
   {{disposition_block|safe}}
   Durations in <span style='color:orange'>orange</span> are elapsed time since assignment start.
+  <div>
+  <button type="button" class="btn btn-primary btn-sm" onclick='show_all();'>Show all</button>
+  <button id="hc" type="button" class="btn btn-primary btn-sm" onclick='$(".complete").hide(); $("#hc").attr("disabled", true);'>Hide completed</button>
+  <button id="ho" type="button" class="btn btn-primary btn-sm" onclick='$(".open").hide(); $("#ho").attr("disabled", true);'>Hide in progress</button>
+  <button id="hn" type="button" class="btn btn-primary btn-sm" onclick='$(".notstarted").hide(); $("#hn").attr("disabled", true);'>Hide no activity</button>
+  </div>
   {{ assigned|safe }}
 {% endblock %}

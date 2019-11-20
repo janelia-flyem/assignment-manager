@@ -131,7 +131,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.15.4'
+__version__ = '0.15.5'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -626,21 +626,25 @@ def get_assigned_tasks(tasks, pid, num_unassigned, user):
         </thead>
         <tbody>
         '''
-        template = "<tr>" + ''.join('<td>%s</td>')*2 \
+        template = '<tr class="%s">' + ''.join('<td>%s</td>')*2 \
                    + ''.join('<td style="text-align: center">%s</td>')*5 + "</tr>"
-        for task in tasks:
-            num_assigned += int(task['num'])
-            link = '<a href="/assignment/%s">%s</a>' % (task['assignment'], task['assignment'])
-            if 'admin' not in permissions and 'view' not in permissions and task['user'] != user:
-                task['proofreader'] = '-'
-                link = task['assignment']
+        for row in tasks:
+            num_assigned += int(row['num'])
+            link = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
+            if 'admin' not in permissions and 'view' not in permissions and row['user'] != user:
+                row['proofreader'] = '-'
+                link = row['assignment']
             duration = ''
-            if task['duration']:
-                duration = task['duration']
-            elif task['start_date']:
-                duration = "<span style='color:orange'>%s</span>" % task['elapsed']
-            assigned += template % (task['proofreader'], link, task['disposition'], task['num'],
-                                    task['start_date'], task['completion_date'], duration)
+            if row['duration']:
+                duration = row['duration']
+            elif row['start_date']:
+                duration = "<span style='color:orange'>%s</span>" % row['elapsed']
+            rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
+            if not row['disposition']:
+                rclass = 'notstarted'
+            assigned += template % (rclass, row['proofreader'], link, row['disposition'],
+                                    row['num'], row['start_date'], row['completion_date'],
+                                    duration)
         assigned += "</tbody></table>"
     else:
         assigned = ''
@@ -652,10 +656,10 @@ def get_assigned_tasks(tasks, pid, num_unassigned, user):
         atasks = g.c.fetchall()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    for disp in atasks:
+    for row in atasks:
         disposition_block += '<h3>%s: %d (%.2f%%)</h3>' \
-                             % (('Not started' if not disp['disposition'] else disp['disposition']),
-                                disp['c'], disp['c'] / (num_assigned + num_unassigned) * 100.0)
+                             % (('No activity' if not row['disposition'] else row['disposition']),
+                                row['c'], row['c'] / (num_assigned + num_unassigned) * 100.0)
     return assigned, num_assigned, disposition_block
 
 
