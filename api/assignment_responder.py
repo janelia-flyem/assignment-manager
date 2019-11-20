@@ -131,7 +131,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.15.3'
+__version__ = '0.15.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -608,10 +608,12 @@ def get_project_properties(project):
     return pprops
 
 
-def get_assigned_tasks(tasks, user):
+def get_assigned_tasks(tasks, pid, num_unassigned, user):
     ''' Get a project's tasks
         Keyword arguments:
           tasks: list of tasks
+          pid: project ID
+          num_unassigned: number of unassigned tasks
           user: user
     '''
     num_assigned = 0
@@ -637,13 +639,24 @@ def get_assigned_tasks(tasks, user):
                 duration = task['duration']
             elif task['start_date']:
                 duration = "<span style='color:orange'>%s</span>" % task['elapsed']
-
             assigned += template % (task['proofreader'], link, task['disposition'], task['num'],
                                     task['start_date'], task['completion_date'], duration)
         assigned += "</tbody></table>"
     else:
         assigned = ''
-    return assigned, num_assigned
+    # Generate  disposition_block
+    disposition_block = ''
+    try:
+        g.c.execute("SELECT disposition,COUNT(1) AS c FROM task_vw WHERE project_id=%s "
+                    + "AND assignment IS NOT NULL GROUP BY 1", pid)
+        atasks = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    for disp in atasks:
+        disposition_block += '<h3>%s: %d (%.2f%%)</h3>' \
+                             % (('Open' if disp['disposition'] == 'None' else disp['disposition']),
+                                disp['c'], disp['c'] / (num_assigned + num_unassigned) * 100.0)
+    return assigned, num_assigned, disposition_block
 
 
 def get_project_by_name_or_id(proj):
@@ -2309,7 +2322,6 @@ def show_project(pname):
     if not project:
         return render_template('error.html', urlroot=request.url_root,
                                title='Not found', message="Project %s was not found" % pname)
-    pprops = get_project_properties(project)
     controls = ''
     if check_permission(user, 'admin'):
         if project['active']:
@@ -2336,14 +2348,6 @@ def show_project(pname):
         </script>
         '''
         controls = controls % (project['priority'], project['name'], project['priority'])
-    # Assigned tasks
-    try:
-        g.c.execute(READ['PROJECTA'] % (pname,))
-        tasks = g.c.fetchall()
-    except Exception as err:
-        return render_template('error.html', urlroot=request.url_root,
-                               title='SQL error', message=sql_error(err))
-    assigned, num_assigned = get_assigned_tasks(tasks, user)
     # Unassigned tasks
     try:
         g.c.execute(READ['PROJECTUA'] % (pname,))
@@ -2352,6 +2356,15 @@ def show_project(pname):
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     num_unassigned = tasks['num'] if tasks else 0
+    # Assigned tasks
+    try:
+        g.c.execute(READ['PROJECTA'] % (pname,))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    assigned, num_assigned, disposition_block = get_assigned_tasks(tasks, project['id'],
+                                                                   num_unassigned, user)
     num_tasks = num_assigned + num_unassigned
     num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
     num_unassignedt = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
@@ -2362,8 +2375,9 @@ def show_project(pname):
     navbar = generate_navbar('Projects')
     return render_template('project.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, project=pname,
-                           pprops=pprops, controls=controls, total=num_tasks,
-                           num_unassigned=num_unassignedt, num_assigned=num_assigned,
+                           pprops=get_project_properties(project), controls=controls,
+                           total=num_tasks, num_unassigned=num_unassignedt,
+                           num_assigned=num_assigned, disposition_block=disposition_block,
                            assigned=assigned)
 
 
