@@ -131,7 +131,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.15.5'
+__version__ = '0.15.6'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1055,6 +1055,44 @@ def process_projectparms(projectins, protocol):
     return required, optional, optionaljs, filt, filtjs
 
 
+def get_user_metrics(mtype, uname):
+    ''' Return a table of user metrics
+        Keyword arguments:
+          mtype: "assignment" or "task"
+          uname: user
+        Returns:
+          HTML content
+    '''
+    stmt = 'SELECT protocol,disposition,COUNT(1) AS c,SEC_TO_TIME(AVG(working_duration)) AS a ' \
+           + 'FROM ' + mtype + '_vw WHERE user=%s GROUP BY 1,2'
+    try:
+        g.c.execute(stmt, (uname,))
+        rows = g.c.fetchall()
+    except Exception as err:
+        raise ValueError(sql_error(err))
+        #return render_template('error.html', urlroot=request.url_root,
+        #                      title='SQL error', message=sql_error(err))
+    content = '<br><h2>No %ss found</h2>' % (mtype, )
+    template = '<tr>' + ''.join("<td>%s</td>")*2 \
+               + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
+
+    if rows:
+        content = '''
+        <br><h2>%ss</h2>
+        <table id="%ss" class="tablesorter standard">
+        <thead>
+        <tr><th>Protocol</th><th>Disposition</th><th>Count</th><th>Average working duration</th></tr>
+        </thead>
+        <tbody>
+        '''
+        content = content % (mtype.capitalize(), mtype, )
+        for row in rows:
+            row['a'] = row['a'] if row['a'] else '-'
+            content += template % (row['protocol'], row['disposition'], row['c'], row['a'])
+        content += '</tbody></table>'
+    return content
+
+
 def generate_assignment(ipd, result):
     ''' Generate and persist an assignment and update its tasks.
         Keyword arguments:
@@ -1747,6 +1785,16 @@ def generate_navbar(active):
                     nav += '<a class="dropdown-item" href="/userlist/%s">%s</a>' \
                            % (subhead, app.config['PROTOCOLS'][subhead])
             nav += '</div></li>'
+        elif heading == 'Users':
+            nav += '<li class="nav-item dropdown active">' \
+                if heading == active else '<li class="nav-item">'
+            nav += '<a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" ' \
+                   + 'role="button" data-toggle="dropdown" aria-haspopup="true" ' \
+                   + 'aria-expanded="false">Users</a><div class="dropdown-menu" '\
+                   + 'aria-labelledby="navbarDropdown">'
+            nav += '<a class="dropdown-item" href="/userlist">Show</a>' \
+                   + '<a class="dropdown-item" href="/usermetrics">Metrics</a>'
+            nav += '</div></li>'
         else:
             nav += '<li class="nav-item active">' if heading == active else '<li class="nav-item">'
             link = ('/' + heading[:-1] + 'list').lower()
@@ -2027,6 +2075,61 @@ def user_config(uname):
     return render_template('user.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], user=uname, navbar=navbar,
                            uprops=uprops, ptable=ptable)
+
+
+@app.route('/usermetrics')
+@app.route('/usermetrics/<string:uname>')
+def usermetrics(uname=None):
+    ''' Show user metrics
+    '''
+    # pylint: disable=R0911
+    user, face = check_token()
+    if not user:
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
+    if not uname:
+        uname = user
+    permission = check_permission(user, ['admin', 'view'])
+    if user != uname and not permission:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Permission error',
+                               message="You don't have permission to view another user's metrics")
+    # Controls
+    controls = ''
+    if permission:
+        try:
+            g.c.execute('SELECT * FROM user_vw')
+            rows = g.c.fetchall()
+        except Exception as err:
+            return render_template('error.html', urlroot=request.url_root,
+                                   title='SQL error', message=sql_error(err))
+        controls = 'Show metrics for <select id="proofreader" onchange="select_proofreader(this);">'
+        for row in rows:
+            controls += '<option value="%s">%s</option>' \
+                        % (row['name'], ' '.join([row['first'], row['last']]))
+        controls += '</select>'
+    # User name
+    try:
+        g.c.execute('SELECT * FROM user_vw WHERE name=%s', (uname,))
+        rec = g.c.fetchone()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    username = ' '.join([rec['first'], rec['last']])
+    try:
+        assignments = get_user_metrics('assignment', uname)
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    try:
+        tasks = get_user_metrics('task', uname)
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    navbar = generate_navbar('Users')
+    return render_template('usermetrics.html', urlroot=request.url_root, face=face,
+                           dataset=app.config['DATASET'], user=uname, navbar=navbar,
+                           controls=controls, username=username, assignments=assignments,
+                           tasks=tasks)
 
 
 @app.route('/logout')

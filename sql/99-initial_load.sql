@@ -62,6 +62,7 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'status','Status','Status');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'note','Note','Task note');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'todo_type','Todo type','Todo type');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'todo_user','Todo user','Todo user');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'priority','Priority','Priority');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'coordinates','Coordinates','Point coordinates');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'task type','Task type','Task type');
