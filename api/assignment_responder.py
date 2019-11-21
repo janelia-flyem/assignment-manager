@@ -1088,7 +1088,7 @@ def get_user_metrics(mtype, uname):
         content = content % (mtype.capitalize(), mtype, )
         for row in rows:
             row['a'] = row['a'] if row['a'] else '-'
-            content += template % (row['protocol'], row['disposition'], row['c'], row['a'])
+            content += template % (app.config['PROTOCOLS'][row['protocol']], row['disposition'], row['c'], row['a'])
         content += '</tbody></table>'
     return content
 
