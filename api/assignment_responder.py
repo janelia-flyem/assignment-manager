@@ -131,7 +131,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.15.6'
+__version__ = '0.15.7'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2097,7 +2097,7 @@ def usermetrics(uname=None):
     controls = ''
     if permission:
         try:
-            g.c.execute('SELECT * FROM user_vw')
+            g.c.execute('SELECT * FROM user_vw ORDER BY last,first')
             rows = g.c.fetchall()
         except Exception as err:
             return render_template('error.html', urlroot=request.url_root,
@@ -2105,7 +2105,7 @@ def usermetrics(uname=None):
         controls = 'Show metrics for <select id="proofreader" onchange="select_proofreader(this);">'
         for row in rows:
             controls += '<option value="%s">%s</option>' \
-                        % (row['name'], ' '.join([row['first'], row['last']]))
+                        % (row['name'], ', '.join([row['last'], row['first']]))
         controls += '</select>'
     # User name
     try:

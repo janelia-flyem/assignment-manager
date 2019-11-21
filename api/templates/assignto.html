@@ -59,7 +59,7 @@ function create_assignment() {
   <div class="grid-container" width="500">
     <div class="grid-item">Select proofreader:</div>
     <div class="grid-item">
-      <select id="proofreader" onchange='select_proofreader(this);'>
+      <select id="proofreader">
         {% for prf in proofreaders %}
           <option value="{{prf}}">{{proofreaders[prf]}}</option>"
         {% endfor %}
