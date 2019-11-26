@@ -131,7 +131,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.15.7'
+__version__ = '0.16.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1088,7 +1088,8 @@ def get_user_metrics(mtype, uname):
         content = content % (mtype.capitalize(), mtype, )
         for row in rows:
             row['a'] = row['a'] if row['a'] else '-'
-            content += template % (app.config['PROTOCOLS'][row['protocol']], row['disposition'], row['c'], row['a'])
+            content += template % (app.config['PROTOCOLS'][row['protocol']], \
+                                   row['disposition'], row['c'], row['a'])
         content += '</tbody></table>'
     return content
 
@@ -1939,7 +1940,7 @@ def user_list():
     user, face = check_token()
     if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
-    if not check_permission(user, ['admin', 'view']):
+    if not check_permission(user, ['super', 'admin', 'view']):
         return redirect("/profile")
     try:
         g.c.execute('SELECT * FROM user_vw ORDER BY janelia_id')
@@ -2052,7 +2053,7 @@ def user_config(uname):
     user, face = check_token()
     if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
-    if not check_permission(user, ['admin', 'view']):
+    if not check_permission(user, ['super', 'admin', 'view']):
         return render_template('error.html', urlroot=request.url_root,
                                title='Permission error',
                                message="You don't have permission to view another user's profile")
@@ -2071,10 +2072,23 @@ def user_config(uname):
     uprops.append(['Janelia ID:', rec['janelia_id']])
     uprops.append(['Organization:', rec['organization']])
     ptable = build_protocols_table(user, rec)
+    links = ''
+    try:
+        g.c.execute("SELECT COUNT(1) AS c FROM task WHERE user=%s", (uname, ))
+        rec = g.c.fetchone()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    if rec and rec['c']:
+        links = '''
+        <a href="/tasklist/%s">Tasks</a><br>
+        <a href="/usermetrics/%s">Metrics</a><br>
+        '''
+        links = links % tuple([uname] * 2)
     navbar = generate_navbar('Users')
     return render_template('user.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], user=uname, navbar=navbar,
-                           uprops=uprops, ptable=ptable)
+                           links=links, uprops=uprops, ptable=ptable)
 
 
 @app.route('/usermetrics')
@@ -2346,12 +2360,19 @@ def assign_tasks(): # pylint: disable=R0914
 
 
 @app.route('/tasklist')
-def show_tasks():
+@app.route('/tasklist/<string:taskuser>')
+def show_tasks(taskuser=None):
     ''' Projects
     '''
     user, face = check_token()
     if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
+    if taskuser and not check_permission(user, ['admin', 'view']):
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Permission error',
+                               message="You don't have permission to view another user's tasks")
+    if not taskuser:
+        taskuser = user
     try:
         g.c.execute('SELECT cvt.display_name,t.disposition,COUNT(1) AS c FROM task t ' \
                     + 'JOIN project p ON (t.project_id=p.id) JOIN cv_term cvt ON ' \
@@ -2374,7 +2395,7 @@ def show_tasks():
                         % (row['display_name'], row['disposition'], row['c'])
         tasksumm += '</tbody></table>'
     try:
-        g.c.execute(READ['TASKS'], user)
+        g.c.execute(READ['TASKS'], taskuser)
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
@@ -2406,11 +2427,11 @@ def show_tasks():
         tasks += "</tbody></table>"
 
     else:
-        tasks = "You have no assigned tasks"
-    navbar = generate_navbar('Tasks')
+        tasks = "%s has no assigned tasks" % (taskuser)
     return render_template('tasklist.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar,
-                           tasksumm=tasksumm, protocols=protocols, tasks=tasks)
+                           user=taskuser, dataset=app.config['DATASET'],
+                           navbar=generate_navbar('Tasks'), tasksumm=tasksumm,
+                           protocols=protocols, tasks=tasks)
 
 
 @app.route('/project/<string:pname>')
