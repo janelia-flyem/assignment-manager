@@ -131,7 +131,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.16.0'
+__version__ = '0.16.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2264,6 +2264,7 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
 
 
 @app.route('/assignmentlist', methods=['GET', 'POST'])
+@app.route('/assignmentlist/interactive', methods=['GET', 'POST'])
 def show_assignments(): # pylint: disable=R0914
     ''' Show assignments
     '''
@@ -2272,6 +2273,10 @@ def show_assignments(): # pylint: disable=R0914
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     result = initialize_result()
     ipd = receive_payload(result)
+    initial_start = ''
+    if 'interactive' not in request.url:
+        initial_start = (datetime.now() - timedelta(days=7)).date()
+        ipd['start_date'] = initial_start
     try:
         g.c.execute('SELECT protocol,disposition,COUNT(1) AS c FROM assignment_vw GROUP BY 1,2')
         rows = g.c.fetchall()
@@ -2295,11 +2300,11 @@ def show_assignments(): # pylint: disable=R0914
     if request.method == 'POST':
         return {"assignments": assignments}
     protocols = protocol_select_list(result)
-    navbar = generate_navbar('Assignments')
     response = make_response(render_template('assignmentlist.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
-                                             navbar=navbar, assignmentsummary=assignmentsummary,
-                                             assignments=assignments,
+                                             navbar=generate_navbar('Assignments'),
+                                             assignmentsummary=assignmentsummary,
+                                             start=initial_start, assignments=assignments,
                                              protocols=protocols, proofreaders=proofreaders,))
     return response
 

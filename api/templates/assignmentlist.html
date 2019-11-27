@@ -23,7 +23,7 @@ function get_assignments()
            "start_date": $('#start').val(),
            "stop_date": $('#stop').val()}
   $.ajax({
-    url: '/assignmentlist',
+    url: '/assignmentlist/interactive',
     headers: {"Authorization": 'Bearer ' + token },
     type: 'POST',
     dataType: 'json',
