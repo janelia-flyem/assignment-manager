@@ -1687,7 +1687,7 @@ def dvid_result_report(project):
         block = '<a class="btn btn-outline-info btn-sm" href="/download/%s" ' \
                 % (downloadable) + 'role="button">Download task results</a><br>'
         return block
-    return None
+    return ''
 
 
 def neuprint_link(ktype, value):
