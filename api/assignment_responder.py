@@ -2543,7 +2543,7 @@ def show_project(pname):
         button = '<a class="btn btn-success btn-sm" style="color:#fff" href="' \
                  + '/assignto/' + pname + '" role="button">Create assignment</a>'
         num_unassignedt += ' ' + button
-    disposition_block += dvid_result_report(project)
+    # disposition_block += dvid_result_report(project)
     return render_template('project.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=generate_navbar('Projects'),
                            project=pname, pprops=get_project_properties(project), controls=controls,
