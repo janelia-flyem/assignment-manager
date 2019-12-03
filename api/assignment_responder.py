@@ -663,7 +663,7 @@ def get_assigned_tasks(tasks, pid, num_unassigned, user):
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     for row in atasks:
-        disposition_block += '<h3>%s: %d (%.2f%%)</h3>' \
+        disposition_block += '<h4>%s: %d (%.2f%%)</h4>' \
                              % (('No activity' if not row['disposition'] else row['disposition']),
                                 row['c'], row['c'] / (num_assigned + num_unassigned) * 100.0)
     return assigned, num_assigned, disposition_block
@@ -2529,9 +2529,9 @@ def show_project(pname):
                  + '/assignto/' + pname + '" role="button">Create assignment</a>'
         num_unassignedt += ' ' + button
     if project['protocol'] in app.config['DVID_REPORTS']:
-        disposition_block += '<a class="btn btn-outline-success btn-sm" style="color:#fff" href="' \
-                             + '/project/report/task_results/' + pname + '.tsv' \
-                             + '" role="button">DVID task result report</a><br>'
+        disposition_block += '<br><a class="btn btn-outline-success btn-sm" style="color:#fff" ' \
+                             + 'href="/project/report/task_results/' + pname + '.tsv' \
+                             + '" role="button">DVID task result report</a><br><br>'
     return render_template('project.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=generate_navbar('Projects'),
                            project=pname, pprops=get_project_properties(project), controls=controls,
