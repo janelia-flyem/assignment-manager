@@ -131,7 +131,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.16.2'
+__version__ = '0.16.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1469,6 +1469,20 @@ def start_task(ipd, result, this_user=None):
         add_point(ipd, task['key_text'], result)
 
 
+def add_dvid_results(task):
+    ''' Add DVID results to a task
+        Keyword arguments:
+          task: task dictionary
+    '''
+    dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' + 'f656' \
+                             + '/segmentation_cellTypeValidation/key/' \
+                             + task['key_text'])
+    dres = dresult['result'] if 'result' in dresult else 'unknown'
+    update_property(task['id'], 'task', 'dvid_result', dres)
+    dres = dresult['user'] if 'user' in dresult else 'unknown'
+    update_property(task['id'], 'task', 'dvid_user', dres)
+
+
 def complete_task(ipd, result):
     ''' Complete a task.
         Keyword arguments:
@@ -1512,6 +1526,8 @@ def complete_task(ipd, result):
         if parm in ipd:
             update_property(ipd['id'], 'task', parm, ipd[parm])
             result['rest']['row_count'] += g.c.rowcount
+    if project['protocol'] == 'cell_type_validation':
+        add_dvid_results(task)
     # If this is the last task, complete the assignment
     assignment = get_assignment_by_name_or_id(task['assignment_id'])
     complete_assignment(ipd, result, assignment, True)
@@ -1650,44 +1666,6 @@ def get_task_controls(user, task_id, task):
                     controls += '<option>%s</option>' % (row['cv_term'])
             controls += '</select>Note: <input id="note" size=40>'
     return controls
-
-
-def dvid_result_report(project):
-    ''' Generate a task result report
-        Keyword arguments:
-          project: project instance
-        Returns:
-          HTML controls to doenload report
-    '''
-    assignment_utilities.CONFIG['dvid'] = {"url": "http://emdata4.int.janelia.org:8900/api/node/"}
-    uuid = 'f656'
-    result_list = []
-    if project['protocol'] == 'cell_type_validation':
-        try:
-            g.c.execute("SELECT key_text FROM task_vw WHERE " \
-                        + "project=%s ORDER BY id", (project['name'],))
-            tasks = g.c.fetchall()
-        except Exception as err:
-            return render_template('error.html', urlroot=request.url_root,
-                                   title='SQL error', message=sql_error(err))
-        for task in tasks:
-            dresult = call_responder('dvid', uuid \
-                                     + '/segmentation_cellTypeValidation/key/' \
-                                     + task['key_text'])
-            result = dresult['result'] if 'result' in dresult else 'unknown'
-            user = dresult['user'] if 'user' in dresult else 'unknown'
-            result_list.append([task['key_text'], result, user])
-        result_str = ''
-    if result_list:
-        for row in result_list:
-            result_str += "%s\t%s\t%s\n" % tuple(row)
-        header = ['Task', 'Result', 'User']
-        ftemplate = '%s\t%s\t%s\n'
-        downloadable = create_downloadable('project_results', header, ftemplate, result_str)
-        block = '<a class="btn btn-outline-info btn-sm" href="/download/%s" ' \
-                % (downloadable) + 'role="button">Download task results</a><br>'
-        return block
-    return ''
 
 
 def neuprint_link(ktype, value):
@@ -2543,7 +2521,6 @@ def show_project(pname):
         button = '<a class="btn btn-success btn-sm" style="color:#fff" href="' \
                  + '/assignto/' + pname + '" role="button">Create assignment</a>'
         num_unassignedt += ' ' + button
-    # disposition_block += dvid_result_report(project)
     return render_template('project.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=generate_navbar('Projects'),
                            project=pname, pprops=get_project_properties(project), controls=controls,
@@ -4905,7 +4882,6 @@ def get_task_info():
     execute_sql(result, 'SELECT * FROM task_vw', 'temp')
     get_task_properties(result)
     del result['temp']
-    print(result)
     return generate_response(result)
 
 
