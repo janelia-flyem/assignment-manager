@@ -58,7 +58,7 @@ def process_file(file):
         endpoint = '/'.join(['tasks', ARGS.protocol, ARGS.project, assignment[0]])
     else:
         endpoint = '/'.join(['tasks', ARGS.protocol, ARGS.project])
-    CONFIG['assignment-manager'] = {"url": "http://svirskasr-wm2.janelia.org/"} #PLUG
+    #CONFIG['assignment-manager'] = {"url": "http://svirskasr-wm2.janelia.org/"} #PLUG
     try:
         content = json.loads(content)
     except ValueError:
@@ -76,8 +76,8 @@ def process_file(file):
 if __name__ == '__main__':
     PARSER = argparse.ArgumentParser(description='Create project/assignment/tasks from a JSON file')
     PARSER.add_argument('--protocol', dest='protocol', action='store',
-                        default='connection_validation',
-                        help='Protocol (optional, default=connection_validation)')
+                        default='cell_type_validation',
+                        help='Protocol (optional, default=cell_type_validation)')
     PARSER.add_argument('--project', dest='project', action='store', required=True,
                         help='Project name')
     PARSER.add_argument('--assign', action='store_true', dest='assign',
