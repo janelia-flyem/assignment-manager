@@ -2529,7 +2529,7 @@ def show_project(pname):
         num_unassignedt += ' ' + button
     if project['protocol'] in app.config['DVID_REPORTS']:
         disposition_block += '<a class="btn btn-outline-success btn-sm" style="color:#fff" href="' \
-                             + '/project/report/task_results/' + pname \
+                             + '/project/report/task_results/' + pname + '.tsv' \
                              + '" role="button">DVID task result report</a><br>'
     return render_template('project.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=generate_navbar('Projects'),
@@ -2539,7 +2539,7 @@ def show_project(pname):
                            assigned=assigned)
 
 
-@app.route('/project/report/task_results/<string:name>', methods=['GET'])
+@app.route('/project/report/task_results/<string:name>.tsv', methods=['GET'])
 def project_report_task_results(name):
     '''
     Generate a DVID task result report
@@ -2569,7 +2569,6 @@ def project_report_task_results(name):
     for task in tasks:
         output += template % (task['id'], task['result'], task['user'])
     response = Response(output, mimetype='text/tab-separated-values')
-    response.headers['Content-Disposition'] = 'attachment; filename=' + name + '.tsv'
     return response
 
 
@@ -2616,7 +2615,7 @@ def show_assignment(aname):
     controls = get_assignment_controls(assignment, num_tasks, tasks_started, user, user_rows)
     if assignment['protocol'] in app.config['DVID_REPORTS']:
         controls += '<br><br><a class="btn btn-outline-success btn-sm" style="color:#fff" href="' \
-                    + '/assignment/report/task_results/' + aname \
+                    + '/assignment/report/task_results/' + aname + '.tsv' \
                     + '" role="button">DVID task result report</a>'
     navbar = generate_navbar('Assignments')
     return render_template('assignment.html', urlroot=request.url_root, face=face,
@@ -2624,7 +2623,7 @@ def show_assignment(aname):
                            aprops=aprops, controls=controls, tasks=tasks)
 
 
-@app.route('/assignment/report/task_results/<string:name>', methods=['GET'])
+@app.route('/assignment/report/task_results/<string:name>.tsv', methods=['GET'])
 def assignment_report_task_results(name):
     '''
     Generate a DVID task result report
@@ -2655,7 +2654,6 @@ def assignment_report_task_results(name):
     for task in tasks:
         output += template % (task['id'], task['result'], task['user'])
     response = Response(output, mimetype='text/tab-separated-values')
-    response.headers['Content-Disposition'] = 'attachment; filename=' + name + '.tsv'
     return response
 
 
