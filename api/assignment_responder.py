@@ -12,7 +12,8 @@ import re
 import sys
 from time import time, sleep
 import elasticsearch
-from flask import Flask, g, make_response, redirect, render_template, request, send_file, jsonify
+from flask import (Flask, g, make_response, redirect, render_template, request,
+                   send_file, jsonify, Response)
 from flask.json import JSONEncoder
 from flask_cors import CORS
 from flask_swagger import swagger
@@ -73,6 +74,11 @@ READ = {
                 + "JOIN project_vw p ON (p.id=t.project_id) "
                 + "GROUP BY t.project,p.project_group,t.protocol "
                 + "ORDER BY t.priority,t.protocol,p.create_date,p.project_group,t.project",
+    'DVID_PROJECT_TASKS': "SELECT t.id,tp1.value AS result,tp2.value AS user FROM "
+                          + "task_property_vw tp1 JOIN task_vw t ON (t.id=tp1.task_id "
+                          + "AND tp1.type='dvid_result') JOIN task_property_vw tp2 "
+                          + "ON (t.id=tp2.task_id AND tp2.type='dvid_user') "
+                          + "WHERE project=%s ORDER BY 1",
     'TASK': "SELECT * FROM task_vw WHERE id=%s",
     'TASKS': "SELECT id,project,assignment,protocol,priority,start_date,completion_date,"
              + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE user=%s "
@@ -131,7 +137,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.16.3'
+__version__ = '0.16.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2521,6 +2527,10 @@ def show_project(pname):
         button = '<a class="btn btn-success btn-sm" style="color:#fff" href="' \
                  + '/assignto/' + pname + '" role="button">Create assignment</a>'
         num_unassignedt += ' ' + button
+    if project['protocol'] in app.config['DVID_REPORTS']:
+        disposition_block += '<a class="btn btn-outline-success btn-sm" style="color:#fff" href="' \
+                             + '/project/report/task_results/' + pname \
+                             + '" role="button">DVID task result report</a><br>'
     return render_template('project.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=generate_navbar('Projects'),
                            project=pname, pprops=get_project_properties(project), controls=controls,
@@ -2570,10 +2580,47 @@ def show_assignment(aname):
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     controls = get_assignment_controls(assignment, num_tasks, tasks_started, user, user_rows)
+    if assignment['protocol'] in app.config['DVID_REPORTS']:
+        controls += '<br><br><a class="btn btn-outline-success btn-sm" style="color:#fff" href="' \
+                    + '/assignment/report/task_results/' + aname \
+                    + '" role="button">DVID task result report</a>'
     navbar = generate_navbar('Assignments')
     return render_template('assignment.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=navbar, assignment=aname,
                            aprops=aprops, controls=controls, tasks=tasks)
+
+
+@app.route('/assignment/report/task_results/<string:name>', methods=['GET'])
+def assignment_report_task_results(name):
+    '''
+    Generate a DVID task result report
+    Given an assignment name, generate a DVID task result report.
+    ---
+    tags:
+      - Assignment
+    parameters:
+      - in: path
+        name: name
+        schema:
+          type: string
+        required: true
+        description: assignment name
+    '''
+    stmt = READ['DVID_PROJECT_TASKS'].replace('project', 'assignment')
+    try:
+        g.c.execute(stmt, (name, ))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    if not tasks:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Not found', message='Assignment not found')
+    template = "%s\t%s\t%s\n"
+    output = template % ('Task ID', 'Result', 'User')
+    for task in tasks:
+        output += template % (task['id'], task['result'], task['user'])
+    return Response(output, mimetype='text/tsv')
 
 
 @app.route('/task/<string:task_id>')
@@ -3592,6 +3639,36 @@ def neuron_count(protocol):
     else:
         result['count'] = 0
     return generate_response(result)
+
+
+@app.route('/project/report/task_results/<string:name>', methods=['GET'])
+def project_report_task_results(name):
+    '''
+    Generate a DVID task result report
+    Given a project name, generate a DVID task result report.
+    ---
+    tags:
+      - Project
+    parameters:
+      - in: path
+        name: name
+        schema:
+          type: string
+        required: true
+        description: project name
+    '''
+    try:
+        g.c.execute(READ['DVID_PROJECT_TASKS'], (name, ))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    if not tasks:
+        raise InvalidUsage('Project was not found', 404)
+    template = "%s\t%s\t%s\n"
+    output = template % ('Task ID', 'Result', 'User')
+    for task in tasks:
+        output += template % (task['id'], task['result'], task['user'])
+    return Response(output, mimetype='text/tsv')
 
 
 @app.route('/project/activate/<string:name>', methods=['OPTIONS', 'POST'])
