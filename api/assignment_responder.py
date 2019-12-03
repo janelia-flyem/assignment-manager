@@ -2539,6 +2539,38 @@ def show_project(pname):
                            assigned=assigned)
 
 
+@app.route('/project/report/task_results/<string:name>', methods=['GET'])
+def project_report_task_results(name):
+    '''
+    Generate a DVID task result report
+    Given a project name, generate a DVID task result report.
+    ---
+    tags:
+      - Project
+    parameters:
+      - in: path
+        name: name
+        schema:
+          type: string
+        required: true
+        description: project name
+    '''
+    try:
+        g.c.execute(READ['DVID_PROJECT_TASKS'], (name, ))
+        tasks = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    if not tasks:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Not found', message="Project %s was not found" % name)
+    template = "%s\t%s\t%s\n"
+    output = template % ('Task ID', 'Result', 'User')
+    for task in tasks:
+        output += template % (task['id'], task['result'], task['user'])
+    return Response(output, mimetype='text/tab-separated-values')
+
+
 @app.route('/assignment/<string:aname>')
 def show_assignment(aname):
     ''' Show information for an assignment
@@ -2615,12 +2647,12 @@ def assignment_report_task_results(name):
                                title='SQL error', message=sql_error(err))
     if not tasks:
         return render_template('error.html', urlroot=request.url_root,
-                               title='Not found', message='Assignment not found')
+                               title='Not found', message="Assignment %s was not found" % name)
     template = "%s\t%s\t%s\n"
     output = template % ('Task ID', 'Result', 'User')
     for task in tasks:
         output += template % (task['id'], task['result'], task['user'])
-    return Response(output, mimetype='text/tsv')
+    return Response(output, mimetype='text/tab-separated-values')
 
 
 @app.route('/task/<string:task_id>')
@@ -3639,36 +3671,6 @@ def neuron_count(protocol):
     else:
         result['count'] = 0
     return generate_response(result)
-
-
-@app.route('/project/report/task_results/<string:name>', methods=['GET'])
-def project_report_task_results(name):
-    '''
-    Generate a DVID task result report
-    Given a project name, generate a DVID task result report.
-    ---
-    tags:
-      - Project
-    parameters:
-      - in: path
-        name: name
-        schema:
-          type: string
-        required: true
-        description: project name
-    '''
-    try:
-        g.c.execute(READ['DVID_PROJECT_TASKS'], (name, ))
-        tasks = g.c.fetchall()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    if not tasks:
-        raise InvalidUsage('Project was not found', 404)
-    template = "%s\t%s\t%s\n"
-    output = template % ('Task ID', 'Result', 'User')
-    for task in tasks:
-        output += template % (task['id'], task['result'], task['user'])
-    return Response(output, mimetype='text/tsv')
 
 
 @app.route('/project/activate/<string:name>', methods=['OPTIONS', 'POST'])
