@@ -2568,7 +2568,9 @@ def project_report_task_results(name):
     output = template % ('Task ID', 'Result', 'User')
     for task in tasks:
         output += template % (task['id'], task['result'], task['user'])
-    return Response(output, mimetype='text/tab-separated-values')
+    response = Response(output, mimetype='text/tab-separated-values')
+    response.headers['Content-Disposition'] = 'attachment; filename=' + name + '.tsv'
+    return response
 
 
 @app.route('/assignment/<string:aname>')
@@ -2652,7 +2654,9 @@ def assignment_report_task_results(name):
     output = template % ('Task ID', 'Result', 'User')
     for task in tasks:
         output += template % (task['id'], task['result'], task['user'])
-    return Response(output, mimetype='text/tab-separated-values')
+    response = Response(output, mimetype='text/tab-separated-values')
+    response.headers['Content-Disposition'] = 'attachment; filename=' + name + '.tsv'
+    return response
 
 
 @app.route('/task/<string:task_id>')
