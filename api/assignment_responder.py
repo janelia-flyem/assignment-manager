@@ -137,7 +137,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.16.4'
+__version__ = '0.17.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1480,7 +1480,8 @@ def add_dvid_results(task):
         Keyword arguments:
           task: task dictionary
     '''
-    dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' + 'f656' \
+    dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' \
+                             + app.config['DVID_ROOT_UUID'] + ':master' \
                              + '/segmentation_cellTypeValidation/key/' \
                              + task['key_text'])
     dres = dresult['result'] if 'result' in dresult else 'unknown'
