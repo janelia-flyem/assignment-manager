@@ -137,7 +137,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.17.0'
+__version__ = '0.17.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2218,6 +2218,25 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
         user, face = get_web_profile()
     permissions = check_permission(user)
     result = initialize_result()
+    try:
+        g.c.execute('SELECT protocol,COUNT(1) AS c FROM project_vw GROUP BY 1')
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    projectsummary = ''
+    if rows:
+        projectsummary = '''
+        <h2>Project summary</h2>
+        <table id="psumm" class="tablesorter standard">
+        <thead><tr><th>Protocol</th><th>Count</th></tr></thead><tbody>
+        '''
+        template = '<tr><td>%s</td><td style="text-align: center">%s</td></tr>'
+        for row in rows:
+            row['protocol'] = app.config['PROTOCOLS'][row['protocol']]
+            projectsummary += template \
+                                 % tuple([row[x] for x in ['protocol', 'c']])
+        projectsummary += '</tbody></table>'
     ipd = receive_payload(result)
     try:
         g.c.execute(project_summary_query(ipd))
@@ -2225,7 +2244,6 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    newproject = ''
     if rows:
         header = ['Protocol', 'Group', 'Project', 'Tasks', 'Disposition', 'Priority',
                   'Created', 'Active']
@@ -2265,8 +2283,10 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
     if request.method == 'POST':
         return {"projects": projects}
     protocols = protocol_select_list(result)
+    newproject = ''
     if check_permission(user, 'admin'):
         newproject = '''
+        <span style="font-size: 14pt;font-weight: 500;">Create a new project</span>:
         <select id="pprotocol" onchange='new_project(this);'>
         <option value="all" SELECTED>Select a protocol for a new project...</a>
         '''
@@ -2280,8 +2300,9 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
     navbar = generate_navbar('Projects')
     response = make_response(render_template('projectlist.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
-                                             navbar=navbar, newproject=newproject,
-                                             protocols=protocols, projects=projects))
+                                             navbar=navbar, projectsummary=projectsummary,
+                                             newproject=newproject, protocols=protocols,
+                                             projects=projects))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
 
@@ -2309,7 +2330,7 @@ def show_assignments(): # pylint: disable=R0914
     assignmentsummary = ''
     if rows:
         assignmentsummary = '''
-        <h2>Summary</h2>
+        <h2>Assignment summary</h2>
         <table id="asumm" class="tablesorter standard">
         <thead><tr><th>Protocol</th><th>Disposition</th><th>Count</th></tr></thead><tbody>
         '''

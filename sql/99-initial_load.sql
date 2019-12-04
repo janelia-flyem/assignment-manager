@@ -71,6 +71,8 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'body ID B','Body ID B','Body ID B');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'match_score','Match score','Match score');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'debug','Debug','Debugging JSON');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'dvid_result','DVID result','DVID result');
+INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('task',''),1,'dvid_user','DVID user','DVID user');
 
 INSERT INTO user (name,first,last,janelia_id,email,organization) VALUES ('robsvi@gmail.com','Rob','Svirskas','svirskasr','svirskasr@hhmi.org','Software Solutions');
 INSERT INTO user_permission (user_id,permission) VALUES ((SELECT id FROM user WHERE janelia_id='svirskasr'),'super');
