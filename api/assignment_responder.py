@@ -137,7 +137,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.17.3'
+__version__ = '0.17.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1475,15 +1475,29 @@ def start_task(ipd, result, this_user=None):
         add_point(ipd, task['key_text'], result)
 
 
+def call_dvid(protocol, body):
+    ''' Get results from DVID
+        Keyword arguments:
+          protocol: protocol
+          body: body ID
+        Returns:
+          JSON
+    '''
+    if protocol != 'cell_type_validation':
+        return None
+    dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' \
+                             + app.config['DVID_ROOT_UUID'] + ':master' \
+                             + '/segmentation_cellTypeValidation/key/' \
+                             + body)
+    return dresult
+
+
 def add_dvid_results(task):
     ''' Add DVID results to a task
         Keyword arguments:
           task: task dictionary
     '''
-    dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' \
-                             + app.config['DVID_ROOT_UUID'] + ':master' \
-                             + '/segmentation_cellTypeValidation/key/' \
-                             + task['key_text'])
+    dresult = call_dvid(task['proptocol'], task['key_text'])
     dres = dresult['result'] if 'result' in dresult else 'unknown'
     if dres == 'unknown' and 'skipped' in dresult:
         dres = dresult['skipped']
@@ -1678,19 +1692,37 @@ def get_task_controls(user, task_id, task):
 
 
 def dvid_result_button(protocol, body):
-    ''' Generate a link to NDVID
+    ''' Generate a button to display a DVID record modal window
         Keyword arguments:
           protocol: protocol
           body: body ID
         Returns:
           link
     '''
-    link = assignment_utilities.CONFIG['dvid-' + app.config['DATASET'].lower()]['url']
-    if protocol == 'cell_type_validation':
-        link += 'api/node/' + app.config['DVID_ROOT_UUID'] + ':master' \
-                + '/segmentation_cellTypeValidation/key/' + body
-    return '<a class="btn btn-outline-info btn-sm" href="%s" ' \
-           % (link) + 'role="button">View</a>'
+    dresult = call_dvid(protocol, body)
+    if not dresult:
+        return '(not available)'
+    content = json.dumps(dresult, sort_keys=True, indent=4)
+    html = '''
+    <button type="button" class="btn btn-outline-info btn-sm" data-toggle="modal" data-target="#dvid_modal">View</button>
+    <div id="dvid_modal" class="modal" tabindex="-1" role="dialog">
+      <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">DVID record</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body"><pre>%s</pre></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    '''
+    return html % (content)
 
 
 def neuprint_link(ktype, value):
