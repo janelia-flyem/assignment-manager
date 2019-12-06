@@ -137,7 +137,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.17.1'
+__version__ = '0.17.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1675,6 +1675,22 @@ def get_task_controls(user, task_id, task):
     return controls
 
 
+def dvid_result_button(protocol, body):
+    ''' Generate a link to NDVID
+        Keyword arguments:
+          protocol: protocol
+          body: body ID
+        Returns:
+          link
+    '''
+    link = assignment_utilities.CONFIG['dvid-' + app.config['DATASET'].lower()]['url']
+    if protocol == 'cell_type_validation':
+        link += 'api/node/' + app.config['DVID_ROOT_UUID'] + ':master' \
+                + '/segmentation_cellTypeValidation/key/' + body
+    return '<a class="btn btn-outline-info btn-sm" href="%s" ' \
+           % (link) + 'role="button">View</a>'
+
+
 def neuprint_link(ktype, value):
     ''' Generate a link to NeuPrint
         Keyword arguments:
@@ -1950,10 +1966,9 @@ def profile():
     uprops.append(['Organization:', rec['organization']])
     uprops.append(['Permissions:', '<br>'.join(rec['permissions'].split(','))])
     token = request.cookies.get(app.config['TOKEN'])
-    navbar = generate_navbar('Users')
     return render_template('profile.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], user=user, navbar=navbar,
-                           uprops=uprops, token=token)
+                           dataset=app.config['DATASET'], user=user,
+                           navbar=generate_navbar('Users'), uprops=uprops, token=token)
 
 
 @app.route('/userlist')
@@ -2015,10 +2030,10 @@ def user_list():
         </div>
         <button type="submit" id="sb" class="btn btn-primary" onclick="add_user();" href="#">Add user</button>
         '''
-    navbar = generate_navbar('Users')
     return render_template('userlist.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], user=user, navbar=navbar,
-                           organizations=organizations, userrows=urows, adduser=adduser)
+                           dataset=app.config['DATASET'], user=user,
+                           navbar=generate_navbar('Users'), organizations=organizations,
+                           userrows=urows, adduser=adduser)
 
 
 @app.route('/userlist/<string:protocol>')
@@ -2062,9 +2077,9 @@ def user_protocol_list(protocol):
         organizations[rclass] = row['organization']
         urows += template % (rclass, ', '.join([row['last'], row['first']]), link,
                              row['janelia_id'], row['organization'], check)
-    navbar = generate_navbar('Protocols')
     return render_template('userplist.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar,
+                           dataset=app.config['DATASET'],
+                           navbar=generate_navbar('Protocols'),
                            protocol=app.config['PROTOCOLS'][protocol],
                            organizations=organizations, userrows=urows)
 
@@ -2108,10 +2123,10 @@ def user_config(uname):
         <a href="/usermetrics/%s">Metrics</a><br>
         '''
         links = links % tuple([uname] * 2)
-    navbar = generate_navbar('Users')
     return render_template('user.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], user=uname, navbar=navbar,
-                           links=links, uprops=uprops, ptable=ptable)
+                           dataset=app.config['DATASET'], user=uname,
+                           navbar=generate_navbar('Users'), links=links,
+                           uprops=uprops, ptable=ptable)
 
 
 @app.route('/usermetrics')
@@ -2162,11 +2177,10 @@ def usermetrics(uname=None):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    navbar = generate_navbar('Users')
     return render_template('usermetrics.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], user=uname, navbar=navbar,
-                           controls=controls, username=username, assignments=assignments,
-                           tasks=tasks)
+                           dataset=app.config['DATASET'], user=uname,
+                           navbar=generate_navbar('Users'), controls=controls,
+                           username=username, assignments=assignments, tasks=tasks)
 
 
 @app.route('/logout')
@@ -2297,12 +2311,11 @@ def show_projects(): # pylint: disable=R0914,R0912,R0915
         newproject += '</select><hr style="border: 1px solid gray">'
     if not token:
         token = ''
-    navbar = generate_navbar('Projects')
     response = make_response(render_template('projectlist.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
-                                             navbar=navbar, projectsummary=projectsummary,
-                                             newproject=newproject, protocols=protocols,
-                                             projects=projects))
+                                             navbar=generate_navbar('Projects'),
+                                             projectsummary=projectsummary, newproject=newproject,
+                                             protocols=protocols, projects=projects))
     response.set_cookie(app.config['TOKEN'], token, domain='.janelia.org')
     return response
 
@@ -2401,10 +2414,10 @@ def assign_tasks(): # pylint: disable=R0914
                      % (downloadable) + 'role="button">Download table</a>' + unassigned
     else:
         unassigned = "There are no projects with unassigned tasks"
-    navbar = generate_navbar('Assignments')
     response = make_response(render_template('assigntasks.html', urlroot=request.url_root,
                                              face=face, dataset=app.config['DATASET'],
-                                             navbar=navbar, unassigned=unassigned))
+                                             navbar=generate_navbar('Assignments'),
+                                             unassigned=unassigned))
     return response
 
 
@@ -2639,10 +2652,9 @@ def show_assignment(aname):
         controls += '<br><br><a class="btn btn-outline-success btn-sm" style="color:#fff" href="' \
                     + '/assignment/report/task_results/' + aname + '.tsv' \
                     + '" role="button">DVID task result report</a>'
-    navbar = generate_navbar('Assignments')
     return render_template('assignment.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar, assignment=aname,
-                           aprops=aprops, controls=controls, tasks=tasks)
+                           dataset=app.config['DATASET'], navbar=generate_navbar('Assignments'),
+                           assignment=aname, aprops=aprops, controls=controls, tasks=tasks)
 
 
 @app.route('/assignment/report/task_results/<string:name>.tsv', methods=['GET'])
@@ -2731,6 +2743,8 @@ def show_task(task_id):
         val = neuprint_link('bodyid', prop['value']) \
               if 'Body ID' in prop['type_display'] else prop['value']
         tprops.append([prop['type_display'], val])
+        if prop['type_display'] == 'DVID user':
+            tprops.append(['DVID record', dvid_result_button(task['protocol'], task['key_text'])])
     # Controls
     try:
         controls = get_task_controls(user, task_id, task)
@@ -2748,10 +2762,9 @@ def show_task(task_id):
     audit = []
     for row in rows:
         audit.append([row['disposition'], row['user'], row['note'], row['create_date']])
-    navbar = generate_navbar('Tasks')
     return render_template('task.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar, task=task_id,
-                           tprops=tprops, controls=controls, audit=audit)
+                           dataset=app.config['DATASET'], navbar=generate_navbar('Tasks'),
+                           task=task_id, tprops=tprops, controls=controls, audit=audit)
 
 
 @app.route('/newproject/<string:protocol>')
@@ -2768,11 +2781,11 @@ def project_create(protocol):
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
     required, optional, optionaljs, filt, filtjs = process_projectparms(projectins, protocol)
-    navbar = generate_navbar('Projects')
     return render_template('newproject.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar, protocol=protocol,
-                           display_protocol=app.config['PROTOCOLS'][protocol], required=required,
-                           optionaljs=optionaljs, optional=optional, filt=filt, filtjs=filtjs)
+                           dataset=app.config['DATASET'], navbar=generate_navbar('Projects'),
+                           protocol=protocol, display_protocol=app.config['PROTOCOLS'][protocol],
+                           required=required, optionaljs=optionaljs, optional=optional, filt=filt,
+                           filtjs=filtjs)
 
 
 @app.route('/assignto/<string:pname>')
@@ -2805,10 +2818,10 @@ def assign_to(pname):
         proofreaders[row['name']] = uname
     constructor = globals()[project['protocol'].capitalize()]
     projectins = constructor()
-    navbar = generate_navbar('Projects')
     return render_template('assignto.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar, project=project['name'],
-                           proofreaders=proofreaders, num_tasks=projectins.num_tasks)
+                           dataset=app.config['DATASET'], navbar=generate_navbar('Projects'),
+                           project=project['name'], proofreaders=proofreaders,
+                           num_tasks=projectins.num_tasks)
 
 
 @app.route('/search')
@@ -2818,9 +2831,8 @@ def show_search_form():
     user, face = check_token()
     if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
-    navbar = generate_navbar('Tasks')
     return render_template('search.html', urlroot=request.url_root, face=face,
-                           dataset=app.config['DATASET'], navbar=navbar)
+                           dataset=app.config['DATASET'], navbar=generate_navbar('Tasks'))
 
 
 # *****************************************************************************
@@ -5104,14 +5116,19 @@ def run_search():
     result = initialize_result()
     ipd = receive_payload(result)
     check_missing_parms(ipd, ['key_type', 'key_text'])
-    prefix = 'SELECT id,protocol,project,assignment,key_type_display,key_text ' \
-             + 'FROM task_vw WHERE key_text=%s'
-    if ipd['key_type'] == 'body':
-        sql = prefix + " OR key_text LIKE %s OR key_text LIKE %s"
-        bind = (ipd['key_text'], ipd['key_text'] + '_%', '%_' + ipd['key_text'])
-    elif ipd['key_type'] == 'xyz':
-        sql = prefix
-        bind = (ipd['key_text'])
+    if ipd['key_type'] == 'task_id':
+        sql = 'SELECT id,protocol,project,assignment,key_type_display,key_text ' \
+              + 'FROM task_vw WHERE id=%s'
+        bind = (ipd['key_text'], )
+    else:
+        prefix = 'SELECT id,protocol,project,assignment,key_type_display,key_text ' \
+                 + 'FROM task_vw WHERE key_text=%s'
+        if ipd['key_type'] == 'body':
+            sql = prefix + " OR key_text LIKE %s OR key_text LIKE %s"
+            bind = (ipd['key_text'], ipd['key_text'] + '_%', '%_' + ipd['key_text'])
+        elif ipd['key_type'] == 'xyz':
+            sql = prefix
+            bind = (ipd['key_text'])
     sql += ' ORDER BY 2,3,4,6'
     result['data'] = 'No tasks found'
     try:
