@@ -137,7 +137,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.17.2'
+__version__ = '0.17.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1485,6 +1485,8 @@ def add_dvid_results(task):
                              + '/segmentation_cellTypeValidation/key/' \
                              + task['key_text'])
     dres = dresult['result'] if 'result' in dresult else 'unknown'
+    if dres == 'unknown' and 'skipped' in dresult:
+        dres = dresult['skipped']
     update_property(task['id'], 'task', 'dvid_result', dres)
     dres = dresult['user'] if 'user' in dresult else 'unknown'
     update_property(task['id'], 'task', 'dvid_user', dres)
