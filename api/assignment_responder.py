@@ -2639,6 +2639,8 @@ def show_assignment(aname):
             if prop == 'project':
                 assignment[prop] = '<a href="/project/%s">%s</a>' \
                                    % (assignment[prop], assignment[prop])
+            elif prop == 'protocol':
+                assignment['protocol'] = app.config['PROTOCOLS'][assignment['protocol']]
             aprops.append([show, assignment[prop]])
     tasks, num_tasks, tasks_started = build_task_table(aname)
     try:
@@ -2721,9 +2723,10 @@ def show_task(task_id):
                                        + "other proofreader's assignments")
     task_id = task['id']
     tprops = []
-    tprops.append(['Project:', task['project']])
+    tprops.append(['Project:', '<a href="/project/%s">%s</a>' % (task['project'], task['project'])])
     tprops.append(['Protocol:', app.config['PROTOCOLS'][task['protocol']]])
-    tprops.append(['Assignment:', task['assignment']])
+    tprops.append(['Assignment:', '<a href="/assignment/%s">%s</a>' % (task['assignment'],
+                                                                       task['assignment'])])
     val = neuprint_link('bodyid', task['key_text']) \
           if task['key_type_display'] == 'Body ID' else task['key_text']
     tprops.append([task['key_type_display'] + ':', val])
