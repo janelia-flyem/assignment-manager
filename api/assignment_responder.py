@@ -137,7 +137,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.17.4'
+__version__ = '0.18.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2739,7 +2739,6 @@ def show_task(task_id):
         sql = "SELECT * FROM task_vw WHERE id=%s"
         if not task_id.isdigit():
             sql = sql.replace("id", "name")
-        print(sql)
         g.c.execute(sql, (task_id,))
         task = g.c.fetchone()
     except Exception as err:
@@ -2790,8 +2789,9 @@ def show_task(task_id):
                                title='SQL error', message=sql_error(err))
     # Audit table
     try:
-        g.c.execute("SELECT disposition,user,note,create_date  FROM task_audit_vw WHERE "
-                    + "task_id=%s ORDER BY 4" % (task_id))
+        g.c.execute(("SELECT disposition,CONCAT(last,', ',first) AS user,note,t.create_date  FROM "
+                     + "task_audit_vw t JOIN user u ON (t.user=u.name) WHERE task_id=%s "
+                     + "ORDER BY 4") % (task_id))
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
@@ -5192,6 +5192,51 @@ def run_search():
             result['data'] += template % (tlink, app.config['PROTOCOLS'][row['protocol']],
                                           plink, alink, row['key_type_display'], row['key_text'])
         result['data'] += '</tbody></table>'
+    return generate_response(result)
+
+
+@app.route('/task_audits/columns', methods=['GET'])
+def get_task_audit_columns():
+    '''
+    Get columns from task_audit_vw table
+    Show the columns in the task_audit_vw table, which may be used to filter
+     results for the /task_audits endpoint.
+    ---
+    tags:
+      - Task
+    responses:
+      200:
+          description: Columns in task_audit_vw table
+    '''
+    result = initialize_result()
+    show_columns(result, "task_audit_vw")
+    return generate_response(result)
+
+
+@app.route('/task_audits', methods=['GET'])
+def get_task_audit_info():
+    '''
+    Get task information (with filtering)
+    Return a list of tasks (rows from the task_vw table). The
+     caller can filter on any of the columns in the task_vw table.
+     Inequalities (!=) and some relational operations (&lt;= and &gt;=) are
+     supported. Wildcards are supported (use "*"). Specific columns from the
+     task_vw table can be returned with the _columns key. The returned
+     list may be ordered by specifying a column with the _sort key. In both
+     cases, multiple columns would be separated by a comma.
+    ---
+    tags:
+      - Task
+    responses:
+      200:
+          description: List of information for one or more tasks
+      404:
+          description: Tasks not found
+    '''
+    result = initialize_result()
+    execute_sql(result, 'SELECT * FROM task_audit_vw', 'temp')
+    get_task_properties(result)
+    del result['temp']
     return generate_response(result)
 
 
