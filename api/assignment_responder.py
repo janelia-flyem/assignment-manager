@@ -137,7 +137,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.18.0'
+__version__ = '0.18.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1640,7 +1640,7 @@ def build_task_table(aname):
         if row['start_date']:
             tasks_started += 1
         duration = ''
-        if row['duration']:
+        if row['duration'] and '0:00:00' not in str(row['duration']):
             duration = row['duration']
         elif row['start_date']:
             duration = "<span style='color:orange'>%s</span>" % row['elapsed']
