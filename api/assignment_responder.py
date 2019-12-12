@@ -1641,7 +1641,7 @@ def build_task_table(aname):
             tasks_started += 1
         duration = ''
         print(row)
-        if row['duration'] and (str(row['start_date']) != str(row['completion_date'])):
+        if row['duration'] and row['duration'] == datetime.timedelta(0):
             duration = row['duration']
         elif row['start_date']:
             duration = "<span style='color:orange'>%s</span>" % row['elapsed']
