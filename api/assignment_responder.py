@@ -1640,7 +1640,7 @@ def build_task_table(aname):
         if row['start_date']:
             tasks_started += 1
         duration = ''
-        if row['duration'] and row['duration'] == timedelta(0):
+        if row['duration'] and row['duration'] != timedelta(0):
             duration = row['duration']
         elif row['start_date']:
             duration = "<span style='color:orange'>%s</span>" % row['elapsed']
