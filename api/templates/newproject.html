@@ -72,10 +72,15 @@ function create_project(count=0) {
       }
       else {
         num_tasks = result.rest.tasks_inserted;
-        if (!num_tasks) {
-          num_tasks = 'No';
+        if (num_tasks == -1) {
+          alert("Generating tasks in background. Project ID=" + result.rest.inserted_id)
         }
-        alert(num_tasks + " task(s) created");
+        else {
+          if (!num_tasks) {
+            num_tasks = 'No';
+          }
+          alert(num_tasks + " task(s) created");
+        }
       }
       $('#sb').prop('disabled', false);
     },

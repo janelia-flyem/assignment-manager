@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from importlib import import_module, reload
 import inspect
 import json
+from multiprocessing import Process
 import os
 import platform
 import re
@@ -27,9 +28,9 @@ import requests
 import assignment_utilities
 from assignment_utilities import (InvalidUsage, call_responder, check_permission,
                                   generate_sql, get_assignment_by_name_or_id, get_task_by_id,
-                                  get_tasks_by_assignment_id, get_workday, neuprint_custom_query,
-                                  random_string, sql_error, update_property, validate_user,
-                                  working_duration)
+                                  get_tasks_by_assignment_id, get_user_by_name, get_workday,
+                                  neuprint_custom_query, random_string, sql_error, update_property,
+                                  validate_user, working_duration)
 
 # pylint: disable=W0611
 from cell_type_validation import Cell_type_validation
@@ -137,7 +138,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.18.1'
+__version__ = '0.19.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -585,7 +586,14 @@ def generate_project(protocol, result):
     update_property(result['rest']['inserted_id'], 'project', 'filter', json.dumps(ipd))
     result['rest']['row_count'] += g.c.rowcount
     # Insert tasks into the database
-    generate_tasks(result, projectins.unit, projectins.task_insert_props, existing_project)
+    if len(result['tasks']) > app.config['FOREGROUND_TASK_LIMIT']:
+        g.db.commit()
+        pro = Process(target=generate_tasks, args=(result, projectins.unit,
+                                                   projectins.task_insert_props, existing_project))
+        pro.start()
+        result['rest']['tasks_inserted'] = -1
+    else:
+        generate_tasks(result, projectins.unit, projectins.task_insert_props, existing_project)
     return 1
 
 
@@ -1408,6 +1416,21 @@ def parse_tasks(ipd):
     return None
 
 
+def call_task_parser(projectins, ipd):
+    ''' Call the appropriate task parser
+        Keyword arguments:
+          projectins: project instance
+          ipd: request payload
+        Returns:
+          error message (or None if no errors)
+    '''
+    if hasattr(projectins, 'parse_tasks'):
+        error = projectins.parse_tasks(ipd)
+    else:
+        error = parse_tasks(ipd)
+    return error
+
+
 
 def check_task(task, ipd, result):
     ''' Check to ensure that a task exists and can be changed by the current user.
@@ -1989,8 +2012,7 @@ def profile():
     if not user:
         return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
     try:
-        g.c.execute('SELECT * FROM user_vw WHERE name=%s', (user,))
-        rec = g.c.fetchone()
+        rec = get_user_by_name(user)
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
@@ -2590,6 +2612,8 @@ def show_project(pname):
     assigned, num_assigned, disposition_block = get_assigned_tasks(tasks, project['id'],
                                                                    num_unassigned, user)
     num_tasks = num_assigned + num_unassigned
+    if not num_tasks:
+        num_tasks = -1
     num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
     num_unassignedt = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
     if num_unassigned and project['active'] and check_permission(user, 'admin'):
@@ -2600,6 +2624,8 @@ def show_project(pname):
         disposition_block += '<br><a class="btn btn-outline-success btn-sm" style="color:#fff" ' \
                              + 'href="/project/report/task_results/' + pname + '.tsv' \
                              + '" role="button">DVID task result report</a><br><br>'
+    if num_tasks == -1:
+        num_tasks = '<span style="color:red">(tasks are still being generated)</span>'
     return render_template('project.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=generate_navbar('Projects'),
                            project=pname, pprops=get_project_properties(project), controls=controls,
@@ -4822,10 +4848,7 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
     project = get_project_by_name_or_id(project_name)
     constructor = globals()[protocol.capitalize()]
     projectins = constructor()
-    if hasattr(projectins, 'parse_tasks'):
-        error = projectins.parse_tasks(ipd)
-    else:
-        error = parse_tasks(ipd)
+    error = call_task_parser(projectins, ipd)
     if error:
         raise InvalidUsage(error)
     if project:
@@ -4855,9 +4878,18 @@ def new_tasks_for_project(protocol, project_name, assignment_name=None):
     else:
         this_user = result['rest']['user']
     # Create the tasks
-    create_tasks_from_json(ipd, project['id'], projectins.unit,
-                           projectins.task_insert_props, assignment_id, result, this_user)
-    g.db.commit()
+    background = len(ipd['tasks']) > app.config['FOREGROUND_TASK_LIMIT']
+    if background:
+        g.db.commit()
+        pro = Process(target=create_tasks_from_json,
+                      args=(ipd, project['id'], projectins.unit, projectins.task_insert_props,
+                            assignment_id, result, this_user))
+        print("Starting create_tasks_from_json in background")
+        pro.start()
+        result['rest']['tasks_inserted'] = -1
+    else:
+        create_tasks_from_json(ipd, project['id'], projectins.unit,
+                               projectins.task_insert_props, assignment_id, result, this_user)
     return generate_response(result)
 
 

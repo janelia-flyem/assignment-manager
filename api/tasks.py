@@ -1,3 +1,8 @@
+''' tasks.py
+    Task utilities
+'''
+
+
 from datetime import datetime
 from flask import g
 from assignment_utilities import InvalidUsage, sql_error
@@ -175,8 +180,10 @@ def create_tasks_from_json(ipd, project_id, key_type, task_insert_props, assignm
             raise InvalidUsage(sql_error(err), 500)
     # Update task_audit
     if audit_list:
+        print("Task audit entries to insert: %s" % len(audit_list))
         try:
             g.c.executemany(WRITE['TASK_AUDIT'], audit_list)
             result['rest']['row_count'] += g.c.rowcount
         except Exception as err:
             raise InvalidUsage(sql_error(err), 500)
+    g.db.commit()

@@ -182,6 +182,21 @@ def get_key_type_id(key_type):
     return KEY_TYPE_IDS[key_type]
 
 
+def get_user_by_name(uname):
+    ''' Given a user name, return the user record
+        Keyword arguments:
+          uname: user name
+        Returns:
+          user record
+    '''
+    try:
+        g.c.execute("SELECT * FROM user WHERE name='%s'" % uname)
+        row = g.c.fetchone()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    return row
+
+
 def get_workday(janelia_id):
     ''' Given a Janelia ID, return the Workday record
         Keyword arguments:
