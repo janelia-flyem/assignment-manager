@@ -190,7 +190,7 @@ def get_user_by_name(uname):
           user record
     '''
     try:
-        g.c.execute("SELECT * FROM user WHERE name='%s'" % uname)
+        g.c.execute("SELECT * FROM user_vw WHERE name='%s'" % uname)
         row = g.c.fetchone()
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)

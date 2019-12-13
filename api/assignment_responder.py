@@ -138,7 +138,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.19.0'
+__version__ = '0.19.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -2152,8 +2152,7 @@ def user_config(uname):
                                title='Permission error',
                                message="You don't have permission to view another user's profile")
     try:
-        g.c.execute('SELECT * FROM user_vw WHERE name=%s', (uname,))
-        rec = g.c.fetchone()
+        rec = get_user_by_name(user)
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
@@ -2217,8 +2216,7 @@ def usermetrics(uname=None):
         controls += '</select>'
     # User name
     try:
-        g.c.execute('SELECT * FROM user_vw WHERE name=%s', (uname,))
-        rec = g.c.fetchone()
+        rec = get_user_by_name(uname)
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
