@@ -11,7 +11,7 @@ import os
 import platform
 import re
 import sys
-from time import time, sleep
+from time import mktime, time, sleep, strptime
 import elasticsearch
 from flask import (Flask, g, make_response, redirect, render_template, request,
                    send_file, jsonify, Response)
@@ -138,7 +138,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.19.2'
+__version__ = '0.19.3'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -674,6 +674,34 @@ def generate_disposition_block(pid, num_assigned, num_unassigned):
                              % (('No activity' if not row['disposition'] else row['disposition']),
                                 row['c'], dperc)
     return disposition_block
+
+
+def generate_task_audit_list(task_id):
+    ''' Genarate a list of audit records
+        Keyword arguments:
+          task_id: task ID
+        Returns:
+          list of audit records
+    '''
+    try:
+        g.c.execute(("SELECT disposition,CONCAT(last,', ',first) AS user,note,t.create_date  FROM "
+                     + "task_audit_vw t JOIN user u ON (t.user=u.name) WHERE task_id=%s "
+                     + "ORDER BY 4") % (task_id))
+        rows = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    audit = []
+    last_date = ''
+    for row in rows:
+        if not last_date:
+            elapsed = ''
+        else:
+            t1 = mktime(strptime(str(last_date), "%Y-%m-%d %H:%M:%S"))
+            t2 = mktime(strptime(str(row['create_date']), "%Y-%m-%d %H:%M:%S"))
+            elapsed = str(timedelta(seconds=(t2 - t1)))
+        audit.append([row['disposition'], row['user'], row['note'], row['create_date'], elapsed])
+        last_date = row['create_date']
+    return audit
 
 
 def get_assigned_tasks(tasks, pid, num_unassigned, user):
@@ -2859,16 +2887,10 @@ def show_task(task_id):
                                title='SQL error', message=sql_error(err))
     # Audit table
     try:
-        g.c.execute(("SELECT disposition,CONCAT(last,', ',first) AS user,note,t.create_date  FROM "
-                     + "task_audit_vw t JOIN user u ON (t.user=u.name) WHERE task_id=%s "
-                     + "ORDER BY 4") % (task_id))
-        rows = g.c.fetchall()
+        audit = generate_task_audit_list(task_id)
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    audit = []
-    for row in rows:
-        audit.append([row['disposition'], row['user'], row['note'], row['create_date']])
     return render_template('task.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=generate_navbar('Tasks'),
                            task=task_id, tprops=tprops, controls=controls, audit=audit)
