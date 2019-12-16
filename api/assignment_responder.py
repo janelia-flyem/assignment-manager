@@ -138,7 +138,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.19.1'
+__version__ = '0.19.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -622,6 +622,60 @@ def get_project_properties(project):
     return pprops
 
 
+def colorize_tasks(num_assigned, num_unassigned, num_tasks):
+    ''' Colorize addigned and unassigned task percentages
+        Keyword arguments:
+          num_assigned: number of tasks assigned
+          num_unassigned: number of tasks unassigned
+          num_tasks: number of tasks
+    '''
+    dperc = '%.2f%%' % (num_assigned / num_tasks * 100.0)
+    if not num_assigned:
+        assignedt = '<span style="color:crimson">%s</span>' % (dperc)
+    elif num_assigned == num_tasks:
+        assignedt = '<span style="color:lime">%s</span>' % (dperc)
+    else:
+        assignedt = '<span style="color:gold">%s</span>' % (dperc)
+    assignedt = '%d (%s)' % (num_assigned, assignedt)
+    dperc = '%.2f%%' % (num_unassigned / num_tasks * 100.0)
+    if not num_unassigned:
+        unassignedt = '<span style="color:lime">%s</span>' % (dperc)
+    elif num_unassigned == num_tasks:
+        unassignedt = '<span style="color:crimson">%s</span>' % (dperc)
+    else:
+        unassignedt = '<span style="color:gold">%s</span>' % (dperc)
+    unassignedt = '%d (%s)' % (num_unassigned, unassignedt)
+    return assignedt, unassignedt
+
+
+def generate_disposition_block(pid, num_assigned, num_unassigned):
+    ''' Get a project task disposition block
+        Keyword arguments:
+          pid: project ID
+          num_assigned: number of tasks assigned
+          num_unassigned: number of tasks unassigned
+        Returns:
+          HTML disposition block
+    '''
+    disposition_block = ''
+    try:
+        g.c.execute("SELECT disposition,COUNT(1) AS c FROM task_vw WHERE project_id=%s "
+                    + "AND assignment IS NOT NULL GROUP BY 1", pid)
+        atasks = g.c.fetchall()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    for row in atasks:
+        dperc = "%.2f%%" % (row['c'] / (num_assigned + num_unassigned) * 100.0)
+        if not row['disposition']:
+            dperc = '<span style="color:gold">%s</span>' % (dperc)
+        elif row['disposition'] == 'Complete':
+            dperc = '<span style="color:lime">%s</span>' % (dperc)
+        disposition_block += '<h4>%s: %d (%s)</h4>' \
+                             % (('No activity' if not row['disposition'] else row['disposition']),
+                                row['c'], dperc)
+    return disposition_block
+
+
 def get_assigned_tasks(tasks, pid, num_unassigned, user):
     ''' Get a project's tasks
         Keyword arguments:
@@ -663,17 +717,10 @@ def get_assigned_tasks(tasks, pid, num_unassigned, user):
     else:
         assigned = ''
     # Generate  disposition_block
-    disposition_block = ''
     try:
-        g.c.execute("SELECT disposition,COUNT(1) AS c FROM task_vw WHERE project_id=%s "
-                    + "AND assignment IS NOT NULL GROUP BY 1", pid)
-        atasks = g.c.fetchall()
+        disposition_block = generate_disposition_block(pid, num_assigned, num_unassigned)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
-    for row in atasks:
-        disposition_block += '<h4>%s: %d (%.2f%%)</h4>' \
-                             % (('No activity' if not row['disposition'] else row['disposition']),
-                                row['c'], row['c'] / (num_assigned + num_unassigned) * 100.0)
     return assigned, num_assigned, disposition_block
 
 
@@ -2612,12 +2659,11 @@ def show_project(pname):
     num_tasks = num_assigned + num_unassigned
     if not num_tasks:
         num_tasks = -1
-    num_assigned = '%d (%.2f%%)' % (num_assigned, num_assigned / num_tasks * 100.0)
-    num_unassignedt = '%d (%.2f%%)' % (num_unassigned, num_unassigned / num_tasks * 100.0)
+    assignedt, unassignedt = colorize_tasks(num_assigned, num_unassigned, num_tasks)
     if num_unassigned and project['active'] and check_permission(user, 'admin'):
         button = '<a class="btn btn-success btn-sm" style="color:#fff" href="' \
                  + '/assignto/' + pname + '" role="button">Create assignment</a>'
-        num_unassignedt += ' ' + button
+        unassignedt += ' ' + button
     if project['protocol'] in app.config['DVID_REPORTS']:
         disposition_block += '<br><a class="btn btn-outline-success btn-sm" style="color:#fff" ' \
                              + 'href="/project/report/task_results/' + pname + '.tsv' \
@@ -2627,8 +2673,8 @@ def show_project(pname):
     return render_template('project.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'], navbar=generate_navbar('Projects'),
                            project=pname, pprops=get_project_properties(project), controls=controls,
-                           total=num_tasks, num_unassigned=num_unassignedt,
-                           num_assigned=num_assigned, disposition_block=disposition_block,
+                           total=num_tasks, num_unassigned=unassignedt,
+                           num_assigned=assignedt, disposition_block=disposition_block,
                            assigned=assigned)
 
 
