@@ -138,7 +138,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.19.3'
+__version__ = '0.19.4'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1144,23 +1144,26 @@ def process_projectparms(projectins, protocol):
     return required, optional, optionaljs, filt, filtjs
 
 
-def get_user_metrics(mtype, uname):
-    ''' Return a table of user metrics
+def get_user_metrics(mtype, uname, user_org='user'):
+    ''' Return a table of user/organization metrics
         Keyword arguments:
           mtype: "assignment" or "task"
           uname: user
         Returns:
           HTML content
     '''
-    stmt = 'SELECT protocol,disposition,COUNT(1) AS c,SEC_TO_TIME(AVG(working_duration)) AS a ' \
-           + 'FROM ' + mtype + '_vw WHERE user=%s GROUP BY 1,2'
+    if user_org == 'user':
+        stmt = 'SELECT protocol,disposition,COUNT(1) AS c,SEC_TO_TIME(AVG(working_duration)) ' \
+               + 'AS a FROM ' + mtype + '_vw WHERE user=%s GROUP BY 1,2'
+    else:
+        stmt = 'SELECT protocol,disposition,COUNT(1) AS c,SEC_TO_TIME(AVG(working_duration)) ' \
+               + 'AS a FROM ' + mtype + '_vw t JOIN user u ON (u.name=t.user ' \
+               + 'AND organization=%s) GROUP BY 1,2'
     try:
         g.c.execute(stmt, (uname,))
         rows = g.c.fetchall()
     except Exception as err:
         raise ValueError(sql_error(err))
-        #return render_template('error.html', urlroot=request.url_root,
-        #                      title='SQL error', message=sql_error(err))
     content = '<br><h2>No %ss found</h2>' % (mtype, )
     template = '<tr>' + ''.join("<td>%s</td>")*2 \
                + ''.join('<td style="text-align: center">%s</td>')*2 + "</tr>"
@@ -1870,6 +1873,35 @@ def add_user_permissions(result, user, permissions):
             raise InvalidUsage(sql_error(err), 500)
 
 
+def generate_user_org_pulldowns():
+    ''' Generate pulldown menu of all users and organizations
+        Keyword arguments:
+          None
+        Returns:
+          HTML menus
+    '''
+    controls = ''
+    try:
+        g.c.execute('SELECT * FROM user_vw ORDER BY last,first')
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    controls = 'Show metrics for <select id="proofreader" onchange="select_proofreader(this);">'
+    for row in rows:
+        controls += '<option value="%s">%s</option>' \
+                    % (row['name'], ', '.join([row['last'], row['first']]))
+    controls += '</select><br><br>'
+    controls += 'Show metrics for <select id="organization" onchange="select_organization(this);">'
+    org = dict()
+    for row in rows:
+        org[row['organization']] = 1
+    for row in sorted(org):
+        controls += '<option value="%s">%s</option>' % (row, row)
+    controls += '</select>'
+    return controls
+
+
 def get_token():
     ''' Get the assignment manager token
     '''
@@ -2276,19 +2308,7 @@ def usermetrics(uname=None):
                                title='Permission error',
                                message="You don't have permission to view another user's metrics")
     # Controls
-    controls = ''
-    if permission:
-        try:
-            g.c.execute('SELECT * FROM user_vw ORDER BY last,first')
-            rows = g.c.fetchall()
-        except Exception as err:
-            return render_template('error.html', urlroot=request.url_root,
-                                   title='SQL error', message=sql_error(err))
-        controls = 'Show metrics for <select id="proofreader" onchange="select_proofreader(this);">'
-        for row in rows:
-            controls += '<option value="%s">%s</option>' \
-                        % (row['name'], ', '.join([row['last'], row['first']]))
-        controls += '</select>'
+    controls = '' if not permission else generate_user_org_pulldowns()
     # User name
     try:
         rec = get_user_by_name(uname)
@@ -2310,6 +2330,37 @@ def usermetrics(uname=None):
                            dataset=app.config['DATASET'], user=uname,
                            navbar=generate_navbar('Users'), controls=controls,
                            username=username, assignments=assignments, tasks=tasks)
+
+
+@app.route('/groupmetrics/<string:gname>')
+def groupmetrics(gname='All groups'):
+    ''' Show user metrics
+    '''
+    # pylint: disable=R0911
+    user, face = check_token()
+    if not user:
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
+    permission = check_permission(user, ['admin', 'view'])
+    if not permission:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Permission error',
+                               message="You don't have permission to view another user's metrics")
+    # Controls
+    controls = '' if not permission else generate_user_org_pulldowns()
+    try:
+        assignments = get_user_metrics('assignment', gname, 'org')
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    try:
+        tasks = get_user_metrics('task', gname, 'org')
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    return render_template('usermetrics.html', urlroot=request.url_root, face=face,
+                           dataset=app.config['DATASET'],
+                           navbar=generate_navbar('Users'), controls=controls,
+                           username=gname, assignments=assignments, tasks=tasks)
 
 
 @app.route('/logout')
