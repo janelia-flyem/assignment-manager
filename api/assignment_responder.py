@@ -138,7 +138,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.19.4'
+__version__ = '0.19.5'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1156,11 +1156,18 @@ def get_user_metrics(mtype, uname, user_org='user'):
         stmt = 'SELECT protocol,disposition,COUNT(1) AS c,SEC_TO_TIME(AVG(working_duration)) ' \
                + 'AS a FROM ' + mtype + '_vw WHERE user=%s GROUP BY 1,2'
     else:
-        stmt = 'SELECT protocol,disposition,COUNT(1) AS c,SEC_TO_TIME(AVG(working_duration)) ' \
-               + 'AS a FROM ' + mtype + '_vw t JOIN user u ON (u.name=t.user ' \
-               + 'AND organization=%s) GROUP BY 1,2'
+        if uname == 'All organizations':
+            stmt = 'SELECT protocol,disposition,COUNT(1) AS c,SEC_TO_TIME(AVG(working_duration)) ' \
+                   + 'AS a FROM ' + mtype + '_vw t GROUP BY 1,2'
+        else:
+            stmt = 'SELECT protocol,disposition,COUNT(1) AS c,SEC_TO_TIME(AVG(working_duration)) ' \
+                   + 'AS a FROM ' + mtype + '_vw t JOIN user u ON (u.name=t.user ' \
+                   + 'AND organization=%s) GROUP BY 1,2'
     try:
-        g.c.execute(stmt, (uname,))
+        if uname == 'All organizations':
+            g.c.execute(stmt)
+        else:
+            g.c.execute(stmt, (uname,))
         rows = g.c.fetchall()
     except Exception as err:
         raise ValueError(sql_error(err))
@@ -1882,17 +1889,22 @@ def generate_user_org_pulldowns():
     '''
     controls = ''
     try:
-        g.c.execute('SELECT * FROM user_vw ORDER BY last,first')
+        g.c.execute('SELECT DISTINCT u.* FROM user_vw u JOIN task t ON (u.name=t.user) ' \
+                    + 'ORDER BY last,first')
         rows = g.c.fetchall()
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    controls = 'Show metrics for <select id="proofreader" onchange="select_proofreader(this);">'
+    controls = 'Show metrics for <select id="proofreader" onchange="select_proofreader(this);">' \
+               + '<option value="">Select a proofreader...</option>'
     for row in rows:
         controls += '<option value="%s">%s</option>' \
                     % (row['name'], ', '.join([row['last'], row['first']]))
     controls += '</select><br><br>'
-    controls += 'Show metrics for <select id="organization" onchange="select_organization(this);">'
+    controls += 'Show metrics for <select id="organization" ' \
+                + 'onchange="select_organization(this);">' \
+                + '<option value="">Select an organization...</option>' \
+                + '<option value="All organizations">All organizations</option>'
     org = dict()
     for row in rows:
         org[row['organization']] = 1
@@ -2332,8 +2344,8 @@ def usermetrics(uname=None):
                            username=username, assignments=assignments, tasks=tasks)
 
 
-@app.route('/groupmetrics/<string:gname>')
-def groupmetrics(gname='All groups'):
+@app.route('/orgmetrics/<string:oname>')
+def orgmetrics(oname='All organizations'):
     ''' Show user metrics
     '''
     # pylint: disable=R0911
@@ -2348,19 +2360,19 @@ def groupmetrics(gname='All groups'):
     # Controls
     controls = '' if not permission else generate_user_org_pulldowns()
     try:
-        assignments = get_user_metrics('assignment', gname, 'org')
+        assignments = get_user_metrics('assignment', oname, 'org')
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     try:
-        tasks = get_user_metrics('task', gname, 'org')
+        tasks = get_user_metrics('task', oname, 'org')
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     return render_template('usermetrics.html', urlroot=request.url_root, face=face,
                            dataset=app.config['DATASET'],
                            navbar=generate_navbar('Users'), controls=controls,
-                           username=gname, assignments=assignments, tasks=tasks)
+                           username=oname, assignments=assignments, tasks=tasks)
 
 
 @app.route('/logout')

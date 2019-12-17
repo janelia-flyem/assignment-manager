@@ -3,7 +3,15 @@
 <script>
 function select_proofreader(sel) {
   selected = sel.value
-  window.location.href = '/usermetrics/' + selected
+  if (selected) {
+    window.location.href = '/usermetrics/' + selected
+  }
+}
+function select_organization(sel) {
+  selected = sel.value
+  if (selected) {
+    window.location.href = '/orgmetrics/' + selected
+  }
 }
 </script>
 {% endblock %}
