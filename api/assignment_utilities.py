@@ -44,15 +44,6 @@ class InvalidUsage(Exception):
 # *****************************************************************************
 # * Functions                                                                 *
 # *****************************************************************************
-def random_string(strlen=8):
-    ''' Generate a random string of letters and digits
-        Keyword arguments:
-          strlen: length of generated string
-    '''
-    components = string.ascii_letters + string.digits
-    return ''.join(random.choice(components) for i in range(strlen))
-
-
 def add_key_value_pair(key, val, separator, sql, bind):
     ''' Add a key/value pair to the WHERE clause of a SQL statement
         Keyword arguments:
@@ -82,6 +73,75 @@ def add_key_value_pair(key, val, separator, sql, bind):
         sql += separator + ' ' + key + eprefix + '=%s'
     bind = bind + (val,)
     return sql, bind
+
+
+def call_responder(server, endpoint, payload=''):
+    ''' Call a responder
+        Keyword arguments:
+          server: server
+          endpoint: REST endpoint
+          payload: payload for POST requests
+    '''
+    if server not in CONFIG:
+        raise Exception("Configuration key %s is not defined" % (server))
+    url = CONFIG[server]['url'] + endpoint
+    try:
+        if payload:
+            headers = {"Content-Type": "application/json",
+                       "Authorization": "Bearer " + BEARER}
+            req = requests.post(url, headers=headers, json=payload)
+        else:
+            req = requests.get(url)
+    except requests.exceptions.RequestException as err:
+        print(err)
+        raise err
+    if req.status_code == 200:
+        return req.json()
+    print("Could not get response from %s: %s" % (url, req.text))
+    #raise InvalidUsage("Could not get response from %s: %s" % (url, req.text))
+    raise InvalidUsage(req.text, req.status_code)
+
+
+def check_permission(user, permission=None):
+    ''' Validate that a user has a specified permission
+        Keyword arguments:
+          user: user name
+          permission: single permission or list of permissions
+    '''
+    if not permission:
+        stmt = "SELECT * FROM user_permission_vw WHERE name=%s"
+        try:
+            g.c.execute(stmt, (user))
+            rows = g.c.fetchall()
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+        perm = [row['permission'] for row in rows]
+        return perm
+    if type(permission).__name__ == 'str':
+        permission = [permission]
+    stmt = "SELECT * FROM user_permission_vw WHERE name=%s AND permission=%s"
+    for per in permission:
+        bind = (user, per)
+        try:
+            g.c.execute(stmt, bind)
+            row = g.c.fetchone()
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+        if row:
+            return 1
+    return 0
+
+
+def check_project(project, ipd):
+    ''' Check to ensure that a project exists and is active.
+        Keyword arguments:
+          project: project instance
+          ipd: request payload
+    '''
+    if not project:
+        raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
+    if not project['active']:
+        raise InvalidUsage("Project %s is not active" % project['name'])
 
 
 def generate_sql(request, result, sql, query=False):
@@ -140,6 +200,38 @@ def get_assignment_by_name_or_id(aid):
     return assignment
 
 
+def get_key_type_id(key_type):
+    ''' Determine the ID for a key type
+        Keyword arguments:
+          key_type: key type
+    '''
+    if key_type not in KEY_TYPE_IDS:
+        try:
+            g.c.execute("SELECT id,cv_term FROM cv_term_vw WHERE cv='key'")
+            cv_terms = g.c.fetchall()
+        except Exception as err:
+            raise InvalidUsage(sql_error(err), 500)
+        for term in cv_terms:
+            KEY_TYPE_IDS[term['cv_term']] = term['id']
+    return KEY_TYPE_IDS[key_type]
+
+
+def get_project_by_name_or_id(proj):
+    ''' Get a project by name or ID
+        Keyword arguments:
+          proj: project name or ID
+    '''
+    proj = str(proj)
+    stmt = "SELECT * FROM project_vw WHERE id=%s" if proj.isdigit() \
+           else "SELECT * FROM project_vw WHERE name=%s"
+    try:
+        g.c.execute(stmt, (proj))
+        project = g.c.fetchone()
+    except Exception as err:
+        raise InvalidUsage(sql_error(err), 500)
+    return project
+
+
 def get_tasks_by_assignment_id(aid):
     ''' Get tasks by assignment ID
         Keyword arguments:
@@ -164,22 +256,6 @@ def get_task_by_id(tid):
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
     return task
-
-
-def get_key_type_id(key_type):
-    ''' Determine the ID for a key type
-        Keyword arguments:
-          key_type: key type
-    '''
-    if key_type not in KEY_TYPE_IDS:
-        try:
-            g.c.execute("SELECT id,cv_term FROM cv_term_vw WHERE cv='key'")
-            cv_terms = g.c.fetchall()
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
-        for term in cv_terms:
-            KEY_TYPE_IDS[term['cv_term']] = term['id']
-    return KEY_TYPE_IDS[key_type]
 
 
 def get_user_by_name(uname):
@@ -211,6 +287,65 @@ def get_workday(janelia_id):
     return work
 
 
+def neuprint_custom_query(payload):
+    ''' Execute a custom NeuPrint query
+        Keyword arguments:
+          payload: Cypher payload
+    '''
+    try:
+        response = call_responder('neuprint', 'custom/custom', {"cypher": payload})
+    except Exception as err:
+        raise err
+    return response
+
+
+def random_string(strlen=8):
+    ''' Generate a random string of letters and digits
+        Keyword arguments:
+          strlen: length of generated string
+    '''
+    components = string.ascii_letters + string.digits
+    return ''.join(random.choice(components) for i in range(strlen))
+
+
+def return_tasks_json(assignment, result):
+    ''' Given an assignment name, return tasks JSON
+        Keyword arduments:
+          assignment: assignment name
+          result: result dictionary
+    '''
+    # pylint: disable=W0703
+    result['task list'] = list()
+    sql = 'SELECT t.id AS task_id,type,value,key_type,key_text FROM task_vw t ' \
+          + 'LEFT OUTER JOIN task_property_vw tp ON (t.id=tp.task_id) WHERE ' \
+          + 't.assignment=%s'
+    try:
+        g.c.execute(sql, (assignment,))
+        taskprops = g.c.fetchall()
+    except Exception as err:
+        return sql_error(err)
+    this_task = ''
+    task = {}
+    task_count = 0
+    for tps in taskprops:
+        if this_task != tps['task_id']:
+            if this_task:
+                result['task list'].append(task)
+            this_task = tps['task_id']
+            task = {"assignment_manager_task_id": this_task,
+                    tps['key_type']: tps['key_text']}
+            task_count += 1
+        if tps['type']:
+            if tps['type'] in ['body ID A', 'body ID B']:
+                task[tps['type']] = int(tps['value'])
+            else:
+                task[tps['type']] = tps['value']
+    if this_task:
+        result['task list'].append(task)
+    result['rest']['row_count'] = task_count
+    return None
+
+
 def sql_error(err):
     ''' Given a MySQL error, return the error message
         Keyword arguments:
@@ -224,52 +359,6 @@ def sql_error(err):
     if error_msg:
         print(error_msg)
     return error_msg
-
-
-def validate_user(user):
-    ''' Validate a user
-        Keyword arguments:
-          user: user name or Janelia ID
-    '''
-    stmt = "SELECT * FROM user_vw WHERE name=%s OR janelia_id=%s"
-    try:
-        g.c.execute(stmt, (user, user))
-        usr = g.c.fetchone()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    if not usr:
-        raise InvalidUsage("User %s does not exist" % (user), 400)
-    return usr['name'], usr['janelia_id']
-
-
-def check_permission(user, permission=None):
-    ''' Validate that a user has a specified permission
-        Keyword arguments:
-          user: user name
-          permission: single permission or list of permissions
-    '''
-    if not permission:
-        stmt = "SELECT * FROM user_permission_vw WHERE name=%s"
-        try:
-            g.c.execute(stmt, (user))
-            rows = g.c.fetchall()
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
-        perm = [row['permission'] for row in rows]
-        return perm
-    if type(permission).__name__ == 'str':
-        permission = [permission]
-    stmt = "SELECT * FROM user_permission_vw WHERE name=%s AND permission=%s"
-    for per in permission:
-        bind = (user, per)
-        try:
-            g.c.execute(stmt, bind)
-            row = g.c.fetchone()
-        except Exception as err:
-            raise InvalidUsage(sql_error(err), 500)
-        if row:
-            return 1
-    return 0
 
 
 def update_property(pid, table, name, value):
@@ -292,43 +381,20 @@ def update_property(pid, table, name, value):
         raise InvalidUsage(sql_error(err), 500)
 
 
-def call_responder(server, endpoint, payload=''):
-    ''' Call a responder
+def validate_user(user):
+    ''' Validate a user
         Keyword arguments:
-          server: server
-          endpoint: REST endpoint
-          payload: payload for POST requests
+          user: user name or Janelia ID
     '''
-    if server not in CONFIG:
-        raise Exception("Configuration key %s is not defined" % (server))
-    url = CONFIG[server]['url'] + endpoint
+    stmt = "SELECT * FROM user_vw WHERE name=%s OR janelia_id=%s"
     try:
-        if payload:
-            headers = {"Content-Type": "application/json",
-                       "Authorization": "Bearer " + BEARER}
-            req = requests.post(url, headers=headers, json=payload)
-        else:
-            req = requests.get(url)
-    except requests.exceptions.RequestException as err:
-        print(err)
-        raise err
-    if req.status_code == 200:
-        return req.json()
-    print("Could not get response from %s: %s" % (url, req.text))
-    #raise InvalidUsage("Could not get response from %s: %s" % (url, req.text))
-    raise InvalidUsage(req.text, req.status_code)
-
-
-def neuprint_custom_query(payload):
-    ''' Execute a custom NeuPrint query
-        Keyword arguments:
-          payload: Cypher payload
-    '''
-    try:
-        response = call_responder('neuprint', 'custom/custom', {"cypher": payload})
+        g.c.execute(stmt, (user, user))
+        usr = g.c.fetchone()
     except Exception as err:
-        raise err
-    return response
+        raise InvalidUsage(sql_error(err), 500)
+    if not usr:
+        raise InvalidUsage("User %s does not exist" % (user), 400)
+    return usr['name'], usr['janelia_id']
 
 
 def working_duration(start_unix, end_unix):

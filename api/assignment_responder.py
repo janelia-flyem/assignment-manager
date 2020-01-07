@@ -26,10 +26,12 @@ import pymysql.err
 import requests
 
 import assignment_utilities
-from assignment_utilities import (InvalidUsage, call_responder, check_permission,
-                                  generate_sql, get_assignment_by_name_or_id, get_task_by_id,
+from assignment_utilities import (InvalidUsage, call_responder, check_permission, check_project,
+                                  generate_sql, get_assignment_by_name_or_id,
+                                  get_project_by_name_or_id, get_task_by_id,
                                   get_tasks_by_assignment_id, get_user_by_name, get_workday,
-                                  neuprint_custom_query, random_string, sql_error, update_property,
+                                  neuprint_custom_query, random_string, return_tasks_json,
+                                  sql_error, update_property,
                                   validate_user, working_duration)
 
 # pylint: disable=W0611
@@ -752,22 +754,6 @@ def get_assigned_tasks(tasks, pid, num_unassigned, user):
     return assigned, num_assigned, disposition_block
 
 
-def get_project_by_name_or_id(proj):
-    ''' Get a project by name or ID
-        Keyword arguments:
-          proj: project name or ID
-    '''
-    proj = str(proj)
-    stmt = "SELECT * FROM project_vw WHERE id=%s" if proj.isdigit() \
-           else "SELECT * FROM project_vw WHERE name=%s"
-    try:
-        g.c.execute(stmt, (proj))
-        project = g.c.fetchone()
-    except Exception as err:
-        raise InvalidUsage(sql_error(err), 500)
-    return project
-
-
 def change_project_active(result, name_or_id, flag):
     ''' Change a project's active flag
         Keyword arguments:
@@ -1025,18 +1011,6 @@ def protocol_select_list(result):
     return protocols
 
 
-def check_project(project, ipd):
-    ''' Check to ensure that a project exists and is active.
-        Keyword arguments:
-          project: project instance
-          ipd: request payload
-    '''
-    if not project:
-        raise InvalidUsage("Project %s does not exist" % ipd['project_name'], 404)
-    if not project['active']:
-        raise InvalidUsage("Project %s is not active" % project['name'])
-
-
 def process_optional_parms(projectins, filt, filtjs):
     ''' Return filters and optional parameter HTML
         Keyword arguments:
@@ -1086,7 +1060,8 @@ def process_projectparms(projectins, protocol):
         filt += '<div class="grid-item">Select ROIs:</div><div class="grid-item">' \
                 + '<select id="roi" class="selectpicker" multiple data-live-search="true"' \
                 + ' onchange="create_project(1);">'
-        payload = "MATCH (n:Meta:%s) RETURN n.superLevelRois" % (app.config['DATASET'].lower())
+        #payload = "MATCH (n:Meta:%s) RETURN n.superLevelRois" % (app.config['DATASET'].lower())
+        payload = "MATCH (n:%s_Meta) RETURN n.superLevelRois" % (app.config['DATASET'].lower())
         rois = neuprint_custom_query(payload)
         rlist = rois['data'][0][0]
         rlist.sort()
@@ -1680,43 +1655,6 @@ def get_task_properties(result):
         for row in rows:
             task['properties'][row['type']] = row['value']
         result['data'].append(task)
-
-
-def return_tasks_json(assignment, result):
-    ''' Given an assignment name, return JSON
-        Keyword arduments:
-          assignment: assignment name
-          result: result dictionary
-    '''
-    result['task list'] = list()
-    sql = 'SELECT t.id AS task_id,type,value,key_type,key_text FROM task_vw t ' \
-          + 'LEFT OUTER JOIN task_property_vw tp ON (t.id=tp.task_id) WHERE ' \
-          + 't.assignment=%s'
-    try:
-        g.c.execute(sql, (assignment,))
-        taskprops = g.c.fetchall()
-    except Exception as err:
-        return sql_error(err)
-    this_task = ''
-    task = {}
-    task_count = 0
-    for tp in taskprops:
-        if this_task != tp['task_id']:
-            if this_task:
-                result['task list'].append(task)
-            this_task = tp['task_id']
-            task = {"assignment_manager_task_id": this_task,
-                    tp['key_type']: tp['key_text']}
-            task_count += 1
-        if tp['type']:
-            if tp['type'] in ['body ID A', 'body ID B']:
-                task[tp['type']] = int(tp['value'])
-            else:
-                task[tp['type']] = tp['value']
-    if this_task:
-        result['task list'].append(task)
-    result['rest']['row_count'] = task_count
-    return None
 
 
 def build_task_table(aname):
