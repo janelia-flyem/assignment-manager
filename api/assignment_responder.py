@@ -1779,8 +1779,10 @@ def neuprint_link(ktype, value):
         Returns:
           link
     '''
+    url = assignment_utilities.CONFIG['neuprint']['url']
+    url = url.replace('api/', 'workstation')
     return '<a href="%s?%s=%s" target="_blank">%s</a>' \
-           % (app.config['NEUPRINT_URL'], ktype, value, value)
+           % (url, ktype, value, value)
 
 
 def get_user_id(user):
