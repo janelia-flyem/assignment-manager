@@ -140,7 +140,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.19.5'
+__version__ = '0.20.0'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1820,12 +1820,13 @@ def add_user_permissions(result, user, permissions):
             raise InvalidUsage(sql_error(err), 500)
 
 
-def generate_user_org_pulldowns():
+def generate_user_pulldown(org, category):
     ''' Generate pulldown menu of all users and organizations
         Keyword arguments:
-          None
+          org: allowable organizations (None=all)
+          category: menu category
         Returns:
-          HTML menus
+          HTML menu
     '''
     controls = ''
     try:
@@ -1835,12 +1836,28 @@ def generate_user_org_pulldowns():
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    controls = 'Show metrics for <select id="proofreader" onchange="select_proofreader(this);">' \
+    controls = 'Show ' + category
+    controls += ' for <select id="proofreader" onchange="select_proofreader(this);">' \
                + '<option value="">Select a proofreader...</option>'
     for row in rows:
+        if org:
+            rec = get_user_by_name(row['name'])
+            if rec['organization'] not in org:
+                continue
         controls += '<option value="%s">%s</option>' \
                     % (row['name'], ', '.join([row['last'], row['first']]))
     controls += '</select><br><br>'
+    return controls, rows
+
+
+def generate_user_org_pulldowns():
+    ''' Generate pulldown menu of all users and organizations
+        Keyword arguments:
+          None
+        Returns:
+          HTML menus
+    '''
+    controls, rows = generate_user_pulldown(None, 'metrics')
     controls += 'Show metrics for <select id="organization" ' \
                 + 'onchange="select_organization(this);">' \
                 + '<option value="">Select an organization...</option>' \
@@ -1851,6 +1868,20 @@ def generate_user_org_pulldowns():
     for row in sorted(org):
         controls += '<option value="%s">%s</option>' % (row, row)
     controls += '</select>'
+    return controls
+
+
+def show_user_list(user):
+    ''' Generate a list of users that an admin may operate on
+        Keyword arguments:
+          user: calling user
+        Returns:
+          HTML menu
+    '''
+    if not check_permission(user, ['admin', 'view']):
+        return ''
+    perm = check_permission(user)
+    controls = generate_user_pulldown(perm, 'tasks')
     return controls
 
 
@@ -2565,8 +2596,7 @@ def show_tasks(taskuser=None):
         return render_template('error.html', urlroot=request.url_root,
                                title='Permission error',
                                message="You don't have permission to view another user's tasks")
-    if not taskuser:
-        taskuser = user
+    # Summary table
     try:
         g.c.execute('SELECT cvt.display_name,t.disposition,COUNT(1) AS c FROM task t ' \
                     + 'JOIN project p ON (t.project_id=p.id) JOIN cv_term cvt ON ' \
@@ -2588,6 +2618,10 @@ def show_tasks(taskuser=None):
             tasksumm += '<tr><td>%s</td><td>%s</td><td>%s</td></tr>' \
                         % (row['display_name'], row['disposition'], row['c'])
         tasksumm += '</tbody></table>'
+        tasksumm += show_user_list(user)
+    # Main table
+    if not taskuser:
+        taskuser = user
     try:
         g.c.execute(READ['TASKS'], taskuser)
         rows = g.c.fetchall()

@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block script %}
 <script>
+function select_proofreader(sel) {
+  selected = sel.value
+  if (selected) {
+    window.location.href = '/tasklist/' + selected
+  }
+}
+
 function show_all() {
   $(".open").show();
   $(".complete").show();
