@@ -88,8 +88,8 @@ READ = {
              + "AND assignment IS NOT NULL "
              + "ORDER BY start_date,priority,protocol,project,assignment,id",
     'TASKSDISP': "SELECT id,project,assignment,protocol,user,priority,start_date,completion_date,"
-                 + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE disposition=%s "
-                 + "AND assignment IS NOT NULL "
+                 + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE "
+                 + "disposition=%s AND assignment IS NOT NULL "
                  + "ORDER BY start_date,priority,protocol,project,assignment,id",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
@@ -1891,7 +1891,8 @@ def generate_user_task_pulldown(org):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    controls = 'Show tasks with status <select id="proofreader" onchange="select_disposition(this);">' \
+    controls = 'Show tasks with status <select id="proofreader" ' \
+               + 'onchange="select_disposition(this);">' \
                + '<option value="">Select a status...</option>'
     added = dict()
     for row in rows:
@@ -2719,7 +2720,6 @@ def show_tasks_by_disposition(disposition=None):
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     protocols = dict()
-    tasksumm = show_user_list(user)
     if rows:
         tasks = '''
         <table id="tasks" class="tablesorter standard">
@@ -2730,7 +2730,11 @@ def show_tasks_by_disposition(disposition=None):
         '''
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
                    + ''.join('<td style="text-align: center">%s</td>')*6 + "</tr>"
+        perm = check_permission(user)
         for row in rows:
+            rec = get_user_by_name(row['user'])
+            if rec['organization'] not in perm:
+                continue
             rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
             if not row['start_date']:
                 rclass = 'notstarted'
@@ -2746,10 +2750,10 @@ def show_tasks_by_disposition(disposition=None):
         tasks += "</tbody></table>"
 
     else:
-        tasks = "%s has no assigned tasks" % (taskuser)
+        tasks = "No tasks found"
     return render_template('taskstatuslist.html', urlroot=request.url_root, face=face,
                            user=user, dataset=app.config['DATASET'],
-                           navbar=generate_navbar('Tasks'), tasksumm=tasksumm,
+                           navbar=generate_navbar('Tasks'), tasksumm=show_user_list(user),
                            protocols=protocols, tasks=tasks, disposition=disposition)
 
 
