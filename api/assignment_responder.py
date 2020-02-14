@@ -87,7 +87,7 @@ READ = {
              + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE user=%s "
              + "AND assignment IS NOT NULL "
              + "ORDER BY start_date,priority,protocol,project,assignment,id",
-    'TASKSDISP': "SELECT id,project,assignment,protocol,priority,start_date,completion_date,"
+    'TASKSDISP': "SELECT id,project,assignment,protocol,user,priority,start_date,completion_date,"
                  + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE disposition=%s "
                  + "AND assignment IS NOT NULL "
                  + "ORDER BY start_date,priority,protocol,project,assignment,id",
@@ -1893,13 +1893,17 @@ def generate_user_task_pulldown(org):
                                title='SQL error', message=sql_error(err))
     controls = 'Show tasks with status <select id="proofreader" onchange="select_disposition(this);">' \
                + '<option value="">Select a status...</option>'
+    added = dict()
     for row in rows:
+        if row['disposition'] in added:
+            continue
         if org:
             rec = get_user_by_name(row['user'])
             if rec['organization'] not in org:
                 continue
         controls += '<option value="%s">%s</option>' \
                     % (row['disposition'], row['disposition'])
+        added[row['disposition']] = 1
     controls += '</select><br><br>'
     return controls
 
@@ -2720,12 +2724,12 @@ def show_tasks_by_disposition(disposition=None):
         tasks = '''
         <table id="tasks" class="tablesorter standard">
         <thead>
-        <tr><th>Task</th><th>Project</th><th>Assignment</th><th>Priority</th><th>Started</th><th>Completed</th><th>Disposition</th><th>Duration</th></tr>
+        <tr><th>Task</th><th>Project</th><th>Assignment</th><th>User</th><th>Priority</th><th>Started</th><th>Completed</th><th>Disposition</th><th>Duration</th></tr>
         </thead>
         <tbody>
         '''
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
-                   + ''.join('<td style="text-align: center">%s</td>')*5 + "</tr>"
+                   + ''.join('<td style="text-align: center">%s</td>')*6 + "</tr>"
         for row in rows:
             rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
             if not row['start_date']:
@@ -2736,7 +2740,7 @@ def show_tasks_by_disposition(disposition=None):
             idlink = '<a href="/task/%s">%s</a>' % (row['id'], row['id'])
             proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
             assign = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
-            tasks += template % (rclass, idlink, proj, assign, row['priority'],
+            tasks += template % (rclass, idlink, proj, assign, row['user'], row['priority'],
                                  row['start_date'], row['completion_date'], row['disposition'],
                                  row['duration'])
         tasks += "</tbody></table>"
