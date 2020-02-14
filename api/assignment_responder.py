@@ -2731,8 +2731,13 @@ def show_tasks_by_disposition(disposition=None):
         template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
                    + ''.join('<td style="text-align: center">%s</td>')*6 + "</tr>"
         perm = check_permission(user)
+        userrec = dict()
         for row in rows:
-            rec = get_user_by_name(row['user'])
+            if row['user'] in userrec:
+                rec = userrec[row['user']]
+            else:
+                rec = get_user_by_name(row['user'])
+                userrec[row['user']] = rec
             if rec['organization'] not in perm:
                 continue
             rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
