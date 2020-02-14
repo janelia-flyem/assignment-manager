@@ -87,6 +87,10 @@ READ = {
              + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE user=%s "
              + "AND assignment IS NOT NULL "
              + "ORDER BY start_date,priority,protocol,project,assignment,id",
+    'TASKSDISP': "SELECT id,project,assignment,protocol,priority,start_date,completion_date,"
+                 + "disposition,SEC_TO_TIME(duration) AS duration FROM task_vw WHERE disposition=%s "
+                 + "AND assignment IS NOT NULL "
+                 + "ORDER BY start_date,priority,protocol,project,assignment,id",
     'TASK_EXISTS': "SELECT * FROM task_vw WHERE project_id=%s AND key_type=%s AND key_text=%s",
     'UNASSIGNED_TASKS': "SELECT id,name,key_type_id,key_text FROM task WHERE project_id=%s AND "
                         + "assignment_id IS NULL ORDER BY id",
@@ -140,7 +144,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.20.0'
+__version__ = '0.20.1'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1871,6 +1875,35 @@ def generate_user_org_pulldowns():
     return controls
 
 
+def generate_user_task_pulldown(org):
+    ''' Generate pulldown menu of task dispositions
+        Keyword arguments:
+          org: allowable organizations (None=all)
+        Returns:
+          HTML menu
+    '''
+  #SELECT DISTINCT user,disposition FROM task WHERE disposition IS NOT NULL;
+    controls = ''
+    try:
+        g.c.execute('SELECT DISTINCT user,disposition FROM task WHERE disposition IS NOT NULL ' \
+                    + 'ORDER BY disposition')
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    controls = 'Show tasks with status <select id="proofreader" onchange="select_disposition(this);">' \
+               + '<option value="">Select a status...</option>'
+    for row in rows:
+        if org:
+            rec = get_user_by_name(row['user'])
+            if rec['organization'] not in org:
+                continue
+        controls += '<option value="%s">%s</option>' \
+                    % (row['disposition'], row['disposition'])
+    controls += '</select><br><br>'
+    return controls
+
+
 def show_user_list(user):
     ''' Generate a list of users that an admin may operate on
         Keyword arguments:
@@ -1881,7 +1914,8 @@ def show_user_list(user):
     if not check_permission(user, ['admin', 'view']):
         return ''
     perm = check_permission(user)
-    controls = generate_user_pulldown(perm, 'tasks')
+    controls, _ = generate_user_pulldown(perm, 'tasks')
+    controls += generate_user_task_pulldown(perm)
     return controls
 
 
@@ -2660,6 +2694,59 @@ def show_tasks(taskuser=None):
                            user=taskuser, dataset=app.config['DATASET'],
                            navbar=generate_navbar('Tasks'), tasksumm=tasksumm,
                            protocols=protocols, tasks=tasks)
+
+
+@app.route('/taskstatuslist/<string:disposition>')
+def show_tasks_by_disposition(disposition=None):
+    ''' Projects
+    '''
+    user, face = check_token()
+    if not user:
+        return redirect(app.config['AUTH_URL'] + "?redirect=" + request.url_root)
+    if not check_permission(user, ['admin', 'view']):
+        return render_template('error.html', urlroot=request.url_root,
+                               title='Permission error',
+                               message="You don't have permission to view another user's tasks")
+    # Main table
+    try:
+        g.c.execute(READ['TASKSDISP'], disposition)
+        rows = g.c.fetchall()
+    except Exception as err:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='SQL error', message=sql_error(err))
+    protocols = dict()
+    tasksumm = show_user_list(user)
+    if rows:
+        tasks = '''
+        <table id="tasks" class="tablesorter standard">
+        <thead>
+        <tr><th>Task</th><th>Project</th><th>Assignment</th><th>Priority</th><th>Started</th><th>Completed</th><th>Disposition</th><th>Duration</th></tr>
+        </thead>
+        <tbody>
+        '''
+        template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
+                   + ''.join('<td style="text-align: center">%s</td>')*5 + "</tr>"
+        for row in rows:
+            rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
+            if not row['start_date']:
+                rclass = 'notstarted'
+            name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
+            rclass += ' ' + name
+            protocols[name] = row['protocol']
+            idlink = '<a href="/task/%s">%s</a>' % (row['id'], row['id'])
+            proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
+            assign = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
+            tasks += template % (rclass, idlink, proj, assign, row['priority'],
+                                 row['start_date'], row['completion_date'], row['disposition'],
+                                 row['duration'])
+        tasks += "</tbody></table>"
+
+    else:
+        tasks = "%s has no assigned tasks" % (taskuser)
+    return render_template('taskstatuslist.html', urlroot=request.url_root, face=face,
+                           user=user, dataset=app.config['DATASET'],
+                           navbar=generate_navbar('Tasks'), tasksumm=tasksumm,
+                           protocols=protocols, tasks=tasks, disposition=disposition)
 
 
 @app.route('/project/<string:pname>')
