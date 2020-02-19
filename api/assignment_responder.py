@@ -1461,7 +1461,7 @@ def add_point(ipd, key, result):
         print(err)
         return False
     if 'data' in response:
-        if len(response['data']) < 1:
+        if not response['data']:
             return False
         point = json.dumps(response['data'][0][0]['coordinates'])
         update_property(ipd['id'], 'task', 'coordinates', point)
