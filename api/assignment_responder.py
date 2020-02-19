@@ -1459,14 +1459,14 @@ def add_point(ipd, key, result):
         response = call_responder('neuprint', 'custom/custom', payload)
     except Exception as err:
         print(err)
-        return False
+        return "Couldn't call NeuPrint"
     if 'data' in response:
         if not response['data']:
-            return False
+            return "No entry  in NeuPrint"
         point = json.dumps(response['data'][0][0]['coordinates'])
         update_property(ipd['id'], 'task', 'coordinates', point)
         result['rest']['row_count'] += g.c.rowcount
-        return True
+        return "No entry  in NeuPrint"
     return False
 
 
@@ -1516,29 +1516,14 @@ def check_task(task, ipd, result):
                                % (task['id'], task['user'], result['rest']['user']))
 
 
-def start_task(ipd, result, this_user=None):
+def update_task(task, ipd, this_user, result):
     ''' Start a task.
         Keyword arguments:
+          task: task record
           ipd: request payload
+          this_user: task user
           result: result dictionary
     '''
-    task = get_task_by_id(ipd['id'])
-    check_task(task, ipd, result)
-    project = get_project_by_name_or_id(task['project_id'])
-    if not project['active']:
-        raise InvalidUsage("Project %s is not active" % project['name'])
-    constructor = globals()[project['protocol'].capitalize()]
-    projectins = constructor()
-    if task['start_date']:
-        raise InvalidUsage("Task %s was already started" % ipd['id'])
-    if not hasattr(projectins, 'no_assignment'):
-        if not task['assignment_id']:
-            raise InvalidUsage("Task %s is not assigned" % ipd['id'])
-        # Check the asignment
-        assignment = get_assignment_by_name_or_id(task['assignment_id'])
-        if not assignment['start_date']:
-            start_assignment({"id": task['assignment_id']}, result)
-    # Update the task
     disposition = 'In progress'
     if 'disposition' in ipd:
         disposition = ipd['disposition']
@@ -1557,6 +1542,33 @@ def start_task(ipd, result, this_user=None):
         g.c.execute(WRITE['TASK_AUDIT'], bind)
     except Exception as err:
         raise InvalidUsage(sql_error(err), 500)
+
+
+def start_task(ipd, result, this_user=None):
+    ''' Start a task.
+        Keyword arguments:
+          ipd: request payload
+          result: result dictionary
+          this_user: task user
+    '''
+    task = get_task_by_id(ipd['id'])
+    check_task(task, ipd, result)
+    project = get_project_by_name_or_id(task['project_id'])
+    if not project['active']:
+        raise InvalidUsage("Project %s is not active" % project['name'])
+    constructor = globals()[project['protocol'].capitalize()]
+    projectins = constructor()
+    if task['start_date']:
+        raise InvalidUsage("Task %s was already started" % ipd['id'])
+    if not hasattr(projectins, 'no_assignment'):
+        if not task['assignment_id']:
+            raise InvalidUsage("Task %s is not assigned" % ipd['id'])
+        # Check the asignment
+        assignment = get_assignment_by_name_or_id(task['assignment_id'])
+        if not assignment['start_date']:
+            start_assignment({"id": task['assignment_id']}, result)
+    # Update the task
+    update_task(task, ipd, this_user, result)
     # Add optional properties
     for parm in projectins.optional_properties:
         if parm in ipd:
@@ -1564,8 +1576,9 @@ def start_task(ipd, result, this_user=None):
             result['rest']['row_count'] += g.c.rowcount
     if projectins.unit == 'body_id':
         # Add a point
-        if not add_point(ipd, task['key_text'], result):
-            raise InvalidUsage("No coordinates found in NeuPrint")
+        ret = add_point(ipd, task['key_text'], result)
+        if ret:
+            raise InvalidUsage(ret)
 
 
 def call_dvid(protocol, body):
@@ -2052,6 +2065,50 @@ def create_downloadable(name, header, template, content):
     text_file.write(content)
     text_file.close()
     return fname
+
+
+def generate_disposition_tasklist(rows, user):
+    ''' Generate a dowenloadabe content file
+        Keyword arguments:
+          rows: task rows
+          user: user
+        Returns:
+          Task table HTML
+    '''
+    tasks = '''
+    <table id="tasks" class="tablesorter standard">
+    <thead>
+    <tr><th>Task</th><th>Project</th><th>Assignment</th><th>User</th><th>Priority</th><th>Started</th><th>Completed</th><th>Disposition</th><th>Duration</th></tr>
+    </thead>
+    <tbody>
+    '''
+    template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
+               + ''.join('<td style="text-align: center">%s</td>')*6 + "</tr>"
+    perm = check_permission(user)
+    userrec = dict()
+    protocols = dict()
+    for row in rows:
+        if row['user'] in userrec:
+            rec = userrec[row['user']]
+        else:
+            rec = get_user_by_name(row['user'])
+            userrec[row['user']] = rec
+        if rec['organization'] not in perm:
+            continue
+        rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
+        if not row['start_date']:
+            rclass = 'notstarted'
+        name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
+        rclass += ' ' + name
+        protocols[name] = row['protocol']
+        idlink = '<a href="/task/%s">%s</a>' % (row['id'], row['id'])
+        proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
+        assign = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
+        tasks += template % (rclass, idlink, proj, assign, row['user'], row['priority'],
+                             row['start_date'], row['completion_date'], row['disposition'],
+                             row['duration'])
+    tasks += "</tbody></table>"
+    return tasks, protocols
 
 
 def publish_kafka(topic, result, message):
@@ -2725,41 +2782,8 @@ def show_tasks_by_disposition(disposition=None):
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
-    protocols = dict()
     if rows:
-        tasks = '''
-        <table id="tasks" class="tablesorter standard">
-        <thead>
-        <tr><th>Task</th><th>Project</th><th>Assignment</th><th>User</th><th>Priority</th><th>Started</th><th>Completed</th><th>Disposition</th><th>Duration</th></tr>
-        </thead>
-        <tbody>
-        '''
-        template = '<tr class="%s">' + ''.join("<td>%s</td>")*3 \
-                   + ''.join('<td style="text-align: center">%s</td>')*6 + "</tr>"
-        perm = check_permission(user)
-        userrec = dict()
-        for row in rows:
-            if row['user'] in userrec:
-                rec = userrec[row['user']]
-            else:
-                rec = get_user_by_name(row['user'])
-                userrec[row['user']] = rec
-            if rec['organization'] not in perm:
-                continue
-            rclass = 'complete' if row['disposition'] == 'Complete' else 'open'
-            if not row['start_date']:
-                rclass = 'notstarted'
-            name = re.sub('[^0-9a-zA-Z]+', '_', row['protocol'])
-            rclass += ' ' + name
-            protocols[name] = row['protocol']
-            idlink = '<a href="/task/%s">%s</a>' % (row['id'], row['id'])
-            proj = '<a href="/project/%s">%s</a>' % (row['project'], row['project'])
-            assign = '<a href="/assignment/%s">%s</a>' % (row['assignment'], row['assignment'])
-            tasks += template % (rclass, idlink, proj, assign, row['user'], row['priority'],
-                                 row['start_date'], row['completion_date'], row['disposition'],
-                                 row['duration'])
-        tasks += "</tbody></table>"
-
+        tasks, protocols = generate_disposition_tasklist(rows, user)
     else:
         tasks = "No tasks found"
     return render_template('taskstatuslist.html', urlroot=request.url_root, face=face,
