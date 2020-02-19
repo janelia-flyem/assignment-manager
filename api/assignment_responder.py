@@ -1458,11 +1458,16 @@ def add_point(ipd, key, result):
     try:
         response = call_responder('neuprint', 'custom/custom', payload)
     except Exception as err:
-        raise err
+        print(err)
+        return False
     if 'data' in response:
+        if len(response['data']) < 1:
+            return False
         point = json.dumps(response['data'][0][0]['coordinates'])
         update_property(ipd['id'], 'task', 'coordinates', point)
         result['rest']['row_count'] += g.c.rowcount
+        return True
+    return False
 
 
 def parse_tasks(ipd):
@@ -1559,7 +1564,8 @@ def start_task(ipd, result, this_user=None):
             result['rest']['row_count'] += g.c.rowcount
     if projectins.unit == 'body_id':
         # Add a point
-        add_point(ipd, task['key_text'], result)
+        if not add_point(ipd, task['key_text'], result):
+            raise InvalidUsage("No coordinates found in NeuPrint")
 
 
 def call_dvid(protocol, body):
