@@ -144,7 +144,7 @@ class CustomJSONEncoder(JSONEncoder):
             return list(iterable)
         return JSONEncoder.default(self, obj)
 
-__version__ = '0.20.1'
+__version__ = '0.20.2'
 app = Flask(__name__, template_folder='templates')
 app.json_encoder = CustomJSONEncoder
 app.config.from_pyfile("config.cfg")
@@ -1462,11 +1462,10 @@ def add_point(ipd, key, result):
         return "Couldn't call NeuPrint"
     if 'data' in response:
         if not response['data']:
-            return "No entry  in NeuPrint"
+            return "No entry in NeuPrint for %s" % (key)
         point = json.dumps(response['data'][0][0]['coordinates'])
         update_property(ipd['id'], 'task', 'coordinates', point)
         result['rest']['row_count'] += g.c.rowcount
-        return "No entry  in NeuPrint"
     return False
 
 
@@ -1578,7 +1577,8 @@ def start_task(ipd, result, this_user=None):
         # Add a point
         ret = add_point(ipd, task['key_text'], result)
         if ret:
-            raise InvalidUsage(ret)
+            print(ret)
+            #raise InvalidUsage(ret)
 
 
 def call_dvid(protocol, body):
@@ -1603,7 +1603,7 @@ def add_dvid_results(task):
         Keyword arguments:
           task: task dictionary
     '''
-    dresult = call_dvid(task['proptocol'], task['key_text'])
+    dresult = call_dvid(task['protocol'], task['key_text'])
     dres = dresult['result'] if 'result' in dresult else 'unknown'
     if dres == 'unknown' and 'skipped' in dresult:
         dres = dresult['skipped']
