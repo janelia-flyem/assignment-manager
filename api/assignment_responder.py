@@ -1036,7 +1036,7 @@ def process_optional_parms(projectins, filt, filtjs):
             filt += '<div class="grid-item">Select statuses:</div><div class="grid-item">' \
                         + '<select id="status" class="selectpicker" multiple ' \
                         + 'data-live-search="true" onchange="create_project(1);">'
-            payload = "MATCH (n:`%s-Neuron`) RETURN DISTINCT n.status" \
+            payload = "MATCH (n:`%s-Neuron`) RETURN DISTINCT n.statusLabel" \
                       % (app.config['DATASET'].lower())
             statuses = neuprint_custom_query(payload)
             rlist = [i[0] for i in statuses['data'] if i[0]]

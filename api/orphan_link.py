@@ -42,12 +42,12 @@ class Orphan_link:
         else:
             ipd['roi'] = ''
         clauses.append(roi_clause)
-        status_clause = "(n.status=\"0.5assign\" or NOT EXISTS(n.status))"
+        status_clause = "(n.statusLabel=\"0.5assign\" or NOT EXISTS(n.statusLabel))"
         if 'status' in ipd and ipd['status']:
             in_list = ipd['status'].split(',')
             clause_list = []
             for this_val in in_list:
-                clause_list.append("n.status=\"" + this_val + "\"")
+                clause_list.append("n.statusLabel=\"" + this_val + "\"")
             status_clause = '(' + ' OR '.join(clause_list) + ')'
         else:
             ipd['status'] = ''
