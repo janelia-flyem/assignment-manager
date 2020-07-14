@@ -40,6 +40,7 @@ from connection_validation import Connection_validation
 from orphan_link import Orphan_link
 from cleave import Cleave
 from todo import Todo
+from focused_merge import Focused_merge
 from tasks import create_tasks_from_json, generate_tasks
 
 # SQL statements
@@ -52,6 +53,9 @@ READ = {
     'CVTERMREL': "SELECT subject,relationship,object FROM "
                  + "cv_term_relationship_vw WHERE subject_id=%s OR "
                  + "object_id=%s",
+    'ELIGIBLE_FOCUSED_MERGE': "SELECT * from focused_merge_task_vw WHERE "
+                                     + "assignment_id IS NOT NULL AND start_date IS NULL "
+                                     + "ORDER BY project,create_date",
     'ELIGIBLE_CELL_TYPE_VALIDATION': "SELECT * from cell_type_validation_task_vw WHERE "
                                      + "assignment_id IS NOT NULL AND start_date IS NULL "
                                      + "ORDER BY project,create_date",
@@ -1589,14 +1593,20 @@ def call_dvid(protocol, body):
         Returns:
           JSON
     '''
-    if protocol != 'cell_type_validation':
+    if protocol == 'cell_type_validation':
+        dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' \
+                                     + app.config['DVID_ROOT_UUID'] + ':master' \
+                                     + '/segmentation_cellTypeValidation/key/' \
+                                     + body)
+        return dresult
+    elif protocol == 'focused_merge':
+        dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' \
+                                     + app.config['DVID_ROOT_UUID'] + ':master' \
+                                     + '/segmentation_merged/key/' \
+                                     + body)
+        return dresult
+    else:
         return None
-    dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' \
-                             + app.config['DVID_ROOT_UUID'] + ':master' \
-                             + '/segmentation_cellTypeValidation/key/' \
-                             + body)
-    return dresult
-
 
 def add_dvid_results(task):
     ''' Add DVID results to a task
