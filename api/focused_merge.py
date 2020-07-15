@@ -30,7 +30,7 @@ class Focused_merge:
           ipd: input parameters
         '''
         if 'task list' not in ipd:
-            return "cell_type_validation requires a task list"
+            return "focused_merge requires a task list"
         elif not isinstance(ipd['task list'], (list)):
             return "tasks payload must be a JSON list"
         ipd['tasks'] = dict()
