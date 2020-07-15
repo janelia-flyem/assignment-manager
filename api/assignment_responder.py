@@ -1593,20 +1593,13 @@ def call_dvid(protocol, body):
         Returns:
           JSON
     '''
-    if protocol == 'cell_type_validation':
-        dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' \
-                                     + app.config['DVID_ROOT_UUID'] + ':master' \
-                                     + '/segmentation_cellTypeValidation/key/' \
-                                     + body)
-        return dresult
-    elif protocol == 'focused_merge':
-        dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' \
-                                     + app.config['DVID_ROOT_UUID'] + ':master' \
-                                     + '/segmentation_merged/key/' \
-                                     + body)
-        return dresult
-    else:
+    if protocol != 'cell_type_validation':
         return None
+    dresult = call_responder('dvid-' + app.config['DATASET'].lower(), 'api/node/' \
+                             + app.config['DVID_ROOT_UUID'] + ':master' \
+                             + '/segmentation_cellTypeValidation/key/' \
+                             + body)
+    return dresult
 
 def add_dvid_results(task):
     ''' Add DVID results to a task
