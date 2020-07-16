@@ -21,6 +21,7 @@ class Focused_merge:
         # self.no_assignment = True 
         self.required_task_props = ['supervoxel ID 1', 'supervoxel ID 2', 'task type', 'supervoxel point 1', 'supervoxel point 2']
         self.task_insert_props = ['supervoxel ID 1', 'supervoxel ID 2', 'task type', 'supervoxel point 1', 'supervoxel point 2' ]
+        #self.task_insert_props = []
 
     def parse_tasks(self, ipd):
         '''
@@ -39,7 +40,11 @@ class Focused_merge:
             ipd['tasks'][name] = {}
             for i in self.task_insert_props:
                 if i in task:
-                    if i == 'debug':
+                    #if i == 'debug':
+                    #    task[i] = json.dumps(task[i])
+                    if i == 'supervoxel point 1':
+                        task[i] = json.dumps(task[i])
+                    if i == 'supervoxel point 2':
                         task[i] = json.dumps(task[i])
                     ipd['tasks'][name][i] = task[i]
                 elif i in self.required_task_props:
