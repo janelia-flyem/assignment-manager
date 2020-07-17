@@ -19,8 +19,8 @@ class Focused_merge:
         self.optional_properties = ['note', 'group', 'source']
         self.allowable_filters = []
         # self.no_assignment = True 
-        self.required_task_props = ['supervoxel ID 1', 'supervoxel ID 2', 'task type', 'supervoxel point 1', 'supervoxel point 2']
-        self.task_insert_props = ['supervoxel ID 1', 'supervoxel ID 2', 'task type', 'supervoxel point 1', 'supervoxel point 2' ]
+        self.required_task_props = ['supervoxel ID 1', 'supervoxel ID 2', 'task type', 'supervoxel point 1', 'supervoxel point 2', 'body point 1', 'body point 2']
+        self.task_insert_props = ['supervoxel ID 1', 'supervoxel ID 2', 'task type', 'supervoxel point 1', 'supervoxel point 2', 'body point 1', 'body point 2']
         #self.task_insert_props = []
 
     def parse_tasks(self, ipd):
@@ -36,7 +36,7 @@ class Focused_merge:
             return "tasks payload must be a JSON list"
         ipd['tasks'] = dict()
         for task in ipd['task list']:
-            name = '_'.join([str(task['supervoxel ID 1']), str(task['supervoxel ID 2'])])
+            name = '+'.join([str(task['supervoxel ID 1']), str(task['supervoxel ID 2'])])
             ipd['tasks'][name] = {}
             for i in self.task_insert_props:
                 if i in task:
@@ -46,6 +46,11 @@ class Focused_merge:
                         task[i] = json.dumps(task[i])
                     if i == 'supervoxel point 2':
                         task[i] = json.dumps(task[i])
+                    if i == 'body point 1':
+                        task[i] = json.dumps(task[i])
+                    if i == 'body point 2':
+                        task[i] = json.dumps(task[i])                    
+
                     ipd['tasks'][name][i] = task[i]
                 elif i in self.required_task_props:
                     return "Missing %s for task %s" % (i, name)
