@@ -12,6 +12,7 @@ from business_duration import businessDuration
 from flask import g
 import holidays as pyholidays
 import pandas as pd
+import json
 import requests
 
 BEARER = ''
@@ -336,10 +337,14 @@ def return_tasks_json(assignment, result):
                     tps['key_type']: tps['key_text']}
             task_count += 1
         if tps['type']:
-            if tps['type'] in ['body ID A', 'body ID B']:
+            if tps['type'] in ['body ID A', 'body ID B', 'supervoxel ID 1', 'supervoxel ID 2']:
                 task[tps['type']] = int(tps['value'])
+            elif tps['type'] in ['supervoxel point 1', 'supervoxel point 2', 'body point 1', 'body point 2']:
+                task[tps['type']] = json.loads(tps['value'])
             else:
                 task[tps['type']] = tps['value']
+
+
     if this_task:
         result['task list'].append(task)
     result['rest']['row_count'] = task_count
