@@ -4650,6 +4650,9 @@ def return_assignment_json(aname):
           description: Assignment not found
     '''
     result = initialize_result()
+    if aname.isdigit():
+        assignment = get_assignment_by_name_or_id(aname)
+        aname = assignment['name']
     try:
         g.c.execute('SELECT p.name FROM project_vw p JOIN assignment a ' \
                     + 'ON (a.project_id=p.id) WHERE a.name=%s', (aname,))
