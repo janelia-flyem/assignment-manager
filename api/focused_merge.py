@@ -16,7 +16,7 @@ class Focused_merge:
         self.num_tasks = 250
         self.task_populate_method = 'json_upload'
         self.unit = 'multibody'
-        self.optional_properties = ['note', 'group', 'source']
+        self.optional_properties = ['note', 'group', 'source', 'neuroglancer_grayscale', 'neuroglancer_segmentation', 'project_dvid_uuid']
         self.allowable_filters = []
         # self.no_assignment = True 
         self.required_task_props = ['supervoxel ID 1', 'supervoxel ID 2', 'task type', 'supervoxel point 1', 'supervoxel point 2', 'body point 1', 'body point 2']
