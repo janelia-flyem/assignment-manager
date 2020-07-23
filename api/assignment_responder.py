@@ -1202,6 +1202,7 @@ def generate_assignment(ipd, result):
         g.c.execute(WRITE['INSERT_ASSIGNMENT'], bind)
         result['rest']['row_count'] = g.c.rowcount
         result['rest']['inserted_id'] = g.c.lastrowid
+        result['rest']['inserted_name'] = ipd['name']
         result['rest']['sql_statement'] = g.c.mogrify(WRITE['INSERT_ASSIGNMENT'], bind)
         publish_cdc(result, {"table": "assignment", "operation": "insert"})
     except Exception as err:
@@ -4637,7 +4638,7 @@ def return_assignment_json(aname):
       - Assignment
     parameters:
       - in: path
-        name: assignment
+        name: assignment name
         schema:
           type: string
         required: true
