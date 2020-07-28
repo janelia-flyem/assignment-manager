@@ -3,17 +3,17 @@
 '''
 
 import datetime
+import json
 import random
 import re
 import string
 import time
 from urllib.parse import parse_qs
-from business_duration import businessDuration
 from flask import g
+import requests
 import holidays as pyholidays
 import pandas as pd
-import json
-import requests
+from business_duration import businessDuration
 
 BEARER = ''
 CONFIG = {'config': {"url": "http://config.int.janelia.org/"}}
@@ -339,7 +339,8 @@ def return_tasks_json(assignment, result):
         if tps['type']:
             if tps['type'] in ['body ID A', 'body ID B', 'supervoxel ID 1', 'supervoxel ID 2']:
                 task[tps['type']] = int(tps['value'])
-            elif tps['type'] in ['supervoxel point 1', 'supervoxel point 2', 'body point 1', 'body point 2']:
+            elif tps['type'] in ['supervoxel point 1', 'supervoxel point 2',
+                                 'body point 1', 'body point 2']:
                 task[tps['type']] = json.loads(tps['value'])
             else:
                 task[tps['type']] = tps['value']
