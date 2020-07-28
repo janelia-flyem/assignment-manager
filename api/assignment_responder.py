@@ -155,7 +155,7 @@ app.config.from_pyfile("config.cfg")
 # Override Flask's usual behavior of sorting keys (interferes with prioritization)
 app.config['JSON_SORT_KEYS'] = False
 SERVER = dict()
-CORS(app, supports_credentials=True, resources={r"*": {"origins": "*.janelia.org"}})
+CORS(app, supports_credentials=True)
 try:
     CONN = pymysql.connect(host=app.config['MYSQL_DATABASE_HOST'],
                            user=app.config['MYSQL_DATABASE_USER'],
