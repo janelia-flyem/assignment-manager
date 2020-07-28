@@ -155,7 +155,7 @@ app.config.from_pyfile("config.cfg")
 # Override Flask's usual behavior of sorting keys (interferes with prioritization)
 app.config['JSON_SORT_KEYS'] = False
 SERVER = dict()
-CORS(app)
+CORS(app, supports_credentials=True, resources={r"*": {"origins": "*.janelia.org"}})
 try:
     CONN = pymysql.connect(host=app.config['MYSQL_DATABASE_HOST'],
                            user=app.config['MYSQL_DATABASE_USER'],
@@ -1182,6 +1182,7 @@ def generate_assignment(ipd, result):
           ipd: request payload
           result: result dictionary
     '''
+    # pylint: disable=R0915
     # Find the project
     project = get_project_by_name_or_id(ipd['project_name'])
     check_project(project, ipd)
@@ -2212,6 +2213,9 @@ def profile():
     except Exception as err:
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
+    if not rec:
+        return render_template('error.html', urlroot=request.url_root,
+                               title='User error', message=("Could not find user %s" % user))
     uprops = []
     name = []
     for nkey in ['first', 'last']:
