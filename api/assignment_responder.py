@@ -54,8 +54,8 @@ READ = {
                  + "cv_term_relationship_vw WHERE subject_id=%s OR "
                  + "object_id=%s",
     'ELIGIBLE_FOCUSED_MERGE': "SELECT * from focused_merge_task_vw WHERE "
-                                     + "assignment_id IS NOT NULL AND start_date IS NULL "
-                                     + "ORDER BY project,create_date",
+                              + "assignment_id IS NOT NULL AND start_date IS NULL "
+                              + "ORDER BY project,create_date",
     'ELIGIBLE_CELL_TYPE_VALIDATION': "SELECT * from cell_type_validation_task_vw WHERE "
                                      + "assignment_id IS NOT NULL AND start_date IS NULL "
                                      + "ORDER BY project,create_date",
@@ -2213,7 +2213,11 @@ def profile():
         return render_template('error.html', urlroot=request.url_root,
                                title='SQL error', message=sql_error(err))
     uprops = []
-    uprops.append(['Name:', ' '.join([rec['first'], rec['last']])])
+    name = []
+    for nkey in ['first', 'last']:
+        if nkey in rec:
+            name.append(rec[nkey])
+    uprops.append(['Name:', ' '.join(name)])
     uprops.append(['Janelia ID:', rec['janelia_id']])
     uprops.append(['Organization:', rec['organization']])
     uprops.append(['Permissions:', '<br>'.join(rec['permissions'].split(','))])
