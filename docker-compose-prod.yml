@@ -11,7 +11,8 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
       - static_volume:/api/static
-      # - /etc/int_cert:/etc/nginx/ssl/
+      #- /etc/int_cert:/etc/nginx/ssl
+      - /etc/nginx/ssl:/etc/nginx/ssl
     networks:
       - assignment-net
   db:
