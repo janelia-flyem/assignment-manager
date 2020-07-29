@@ -53,7 +53,6 @@ INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getC
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('project',''),1,'source','Source','Source');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('project',''),1,'neuroglancer_grayscale','Neuroglancer grayscale','Neuroglancer grayscale');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('project',''),1,'neuroglancer_segmentation','Neuroglancer segmentation','Neuroglancer segmentation');
-INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('project',''),1,'project_dvid_uuid','Project DVID uuid','Project DVID uuid');
 
 INSERT INTO cv (version,is_current,name,display_name,definition) VALUES (1,1,'assignment','Assignment','Assignment');
 INSERT INTO cv_term (cv_id,is_current,name,display_name,definition) VALUES (getCVId('assignment',''),1,'note','Note','Assignment note');
