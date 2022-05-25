@@ -9,7 +9,7 @@ holidays>=0.9.10
 kafka-python==1.4.6
 pandas>=0.24.2
 PyMySQL>=0.9.2
-PyJWT==1.7.1
+PyJWT==2.4.0
 requests>=2.22.0
 virtualenv>=16.6.1
 gunicorn>=19.9.0
